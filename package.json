@@ -1,0 +1,19 @@
+{
+  "name": "ai-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI desktop/terminal companion with customizable characters",
+  "workspaces": [
+    "packages/core",
+    "packages/terminal",
+    "packages/desktop"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:terminal": "npm run dev --workspace=packages/terminal",
+    "dev:desktop": "npm run dev --workspace=packages/desktop"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
