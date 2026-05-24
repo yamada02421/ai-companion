@@ -13,8 +13,23 @@ const STATE_DIR = path.join(PROJECT_ROOT, ".state");
 const CHARACTERS_DIR = path.join(PROJECT_ROOT, "characters");
 const PUBLIC_DIR = path.resolve(__dirname, "..", "public");
 
-// Default character name
-const CHAR_NAME = process.env.CHAR_NAME || "rei";
+// Active character state file
+const ACTIVE_CHAR_FILE = path.join(STATE_DIR, "active-character.txt");
+
+/** Resolve the current character name (env > .state file > fallback) */
+function getActiveCharName(): string {
+  if (process.env.CHAR_NAME) return process.env.CHAR_NAME;
+  try {
+    const saved = fs.readFileSync(ACTIVE_CHAR_FILE, "utf-8").trim();
+    if (saved) return saved;
+  } catch {
+    // file doesn't exist yet
+  }
+  return "rei";
+}
+
+// Character name — mutable so the dashboard can switch at runtime
+let CHAR_NAME = getActiveCharName();
 
 // MIME types for static file serving
 const MIME_TYPES: Record<string, string> = {
@@ -106,6 +121,75 @@ function serveStatic(
   }
 }
 
+// ---------- DataManager (import/export) ----------
+
+// Inline lightweight data manager to avoid cross-package build dependency
+function exportAllData(): Record<string, unknown> {
+  const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
+  const userMemoryPath = path.join(STATE_DIR, `${CHAR_NAME}-user-memory.json`);
+  const affinityPath = path.join(STATE_DIR, `${CHAR_NAME}-affinity.json`);
+
+  const history = readJsonFile(historyPath) ?? [];
+  const userMemoryRaw = readJsonFile(userMemoryPath) as Record<string, unknown> | null;
+  let userMemory: unknown[] = [];
+  if (Array.isArray(userMemoryRaw)) {
+    userMemory = userMemoryRaw;
+  } else if (userMemoryRaw && Array.isArray(userMemoryRaw.facts)) {
+    userMemory = userMemoryRaw.facts as unknown[];
+  }
+  const affinity = readJsonFile(affinityPath) ?? null;
+
+  return {
+    version: "1.0",
+    charName: CHAR_NAME,
+    exportedAt: new Date().toISOString(),
+    history,
+    userMemory,
+    affinity,
+  };
+}
+
+interface ImportPayload {
+  version?: string;
+  charName?: string;
+  history?: unknown[];
+  userMemory?: unknown[];
+  affinity?: Record<string, unknown> | null;
+}
+
+function importAllData(data: ImportPayload): void {
+  if (!data.version) {
+    throw new Error("Invalid export data: missing version");
+  }
+  if (data.charName && data.charName !== CHAR_NAME) {
+    throw new Error(
+      `Character name mismatch: expected "${CHAR_NAME}", got "${data.charName}"`
+    );
+  }
+
+  // Ensure state directory exists
+  try { fs.mkdirSync(STATE_DIR, { recursive: true }); } catch {}
+
+  if (Array.isArray(data.history)) {
+    const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
+    fs.writeFileSync(historyPath, JSON.stringify(data.history, null, 2), "utf-8");
+  }
+
+  if (Array.isArray(data.userMemory)) {
+    const userMemoryPath = path.join(STATE_DIR, `${CHAR_NAME}-user-memory.json`);
+    const memoryState = {
+      facts: data.userMemory,
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(userMemoryPath, JSON.stringify(memoryState, null, 2), "utf-8");
+  }
+
+  if (data.affinity && typeof data.affinity === "object") {
+    const affinityPath = path.join(STATE_DIR, `${CHAR_NAME}-affinity.json`);
+    fs.writeFileSync(affinityPath, JSON.stringify(data.affinity, null, 2), "utf-8");
+  }
+}
+
 // ---------- API Handlers ----------
 
 /** GET /api/affinity */
@@ -182,6 +266,33 @@ function handleGetSettings(res: http.ServerResponse): void {
   sendJson(res, 200, { charName: CHAR_NAME, settings: data });
 }
 
+/** GET /api/timeline */
+function handleGetTimeline(
+  res: http.ServerResponse,
+  url: URL
+): void {
+  const timelinePath = path.join(STATE_DIR, `${CHAR_NAME}-timeline.json`);
+  const raw = readJsonFile(timelinePath) as unknown[] | null;
+  const events = Array.isArray(raw) ? raw : [];
+
+  const dateParam = url.searchParams.get("date");
+
+  if (dateParam) {
+    // Filter by date (YYYY-MM-DD)
+    const filtered = events
+      .filter((e: any) => typeof e.timestamp === "string" && e.timestamp.startsWith(dateParam))
+      .reverse();
+    sendJson(res, 200, { charName: CHAR_NAME, events: filtered });
+    return;
+  }
+
+  // Return latest N events (default 50)
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? parseInt(limitParam, 10) : 50;
+  const latest = events.slice(-limit).reverse();
+  sendJson(res, 200, { charName: CHAR_NAME, events: latest });
+}
+
 /** GET /api/curator-history */
 function handleGetCuratorHistory(res: http.ServerResponse): void {
   const historyPath = path.join(STATE_DIR, "curator-history.json");
@@ -235,6 +346,100 @@ async function handlePutSettings(
   }
 }
 
+/** GET /api/characters — list all character YAML files */
+function handleGetCharacters(res: http.ServerResponse): void {
+  try {
+    const files = fs.readdirSync(CHARACTERS_DIR).filter((f) => f.endsWith(".yaml"));
+    const characters = files.map((file) => {
+      const yamlPath = path.join(CHARACTERS_DIR, file);
+      const data = readYamlFile(yamlPath) as Record<string, unknown> | null;
+      const name = file.replace(/\.yaml$/, "");
+      return {
+        name,
+        display_name: data?.display_name ?? name,
+        personality: typeof data?.personality === "string"
+          ? data.personality.split("\n")[0].trim()
+          : "",
+      };
+    });
+    sendJson(res, 200, { characters, active: CHAR_NAME });
+  } catch {
+    sendJson(res, 500, { error: "Failed to read characters directory" });
+  }
+}
+
+/** GET /api/character/active — current active character name */
+function handleGetActiveCharacter(res: http.ServerResponse): void {
+  sendJson(res, 200, { active: CHAR_NAME });
+}
+
+/** PUT /api/character/active — switch active character */
+async function handlePutActiveCharacter(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  try {
+    const body = await parseBody(req);
+    const { name } = JSON.parse(body) as { name?: string };
+    if (!name || typeof name !== "string") {
+      sendJson(res, 400, { error: "Missing 'name' field" });
+      return;
+    }
+
+    // Validate that the character file exists
+    const yamlPath = path.join(CHARACTERS_DIR, `${name}.yaml`);
+    if (!fs.existsSync(yamlPath)) {
+      sendJson(res, 404, { error: `Character '${name}' not found` });
+      return;
+    }
+
+    // Persist to .state/active-character.txt
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+    } catch {}
+    fs.writeFileSync(ACTIVE_CHAR_FILE, name, "utf-8");
+
+    // Update in-memory value
+    CHAR_NAME = name;
+
+    sendJson(res, 200, { success: true, active: name });
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body" });
+  }
+}
+
+/** GET /api/export */
+function handleExport(res: http.ServerResponse): void {
+  try {
+    const data = exportAllData();
+    const json = JSON.stringify(data, null, 2);
+    const filename = `${CHAR_NAME}-export-${new Date().toISOString().slice(0, 10)}.json`;
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    });
+    res.end(json);
+  } catch (e) {
+    sendJson(res, 500, { error: "Export failed" });
+  }
+}
+
+/** POST /api/import */
+async function handleImport(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  try {
+    const body = await parseBody(req);
+    const data = JSON.parse(body) as ImportPayload;
+    importAllData(data);
+    sendJson(res, 200, { success: true, message: "Data imported successfully" });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Import failed";
+    sendJson(res, 400, { error: message });
+  }
+}
+
 // ---------- Request Router ----------
 
 const server = http.createServer(async (req, res) => {
@@ -244,7 +449,7 @@ const server = http.createServer(async (req, res) => {
 
   // CORS headers (for local dev)
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (method === "OPTIONS") {
@@ -267,12 +472,24 @@ const server = http.createServer(async (req, res) => {
     ) {
       const factId = decodeURIComponent(pathname.slice("/api/user-memory/".length));
       handleDeleteUserMemory(res, factId);
+    } else if (pathname === "/api/timeline" && method === "GET") {
+      handleGetTimeline(res, url);
     } else if (pathname === "/api/curator-history" && method === "GET") {
       handleGetCuratorHistory(res);
     } else if (pathname === "/api/settings" && method === "GET") {
       handleGetSettings(res);
     } else if (pathname === "/api/settings" && method === "PUT") {
       await handlePutSettings(req, res);
+    } else if (pathname === "/api/characters" && method === "GET") {
+      handleGetCharacters(res);
+    } else if (pathname === "/api/character/active" && method === "GET") {
+      handleGetActiveCharacter(res);
+    } else if (pathname === "/api/character/active" && method === "PUT") {
+      await handlePutActiveCharacter(req, res);
+    } else if (pathname === "/api/export" && method === "GET") {
+      handleExport(res);
+    } else if (pathname === "/api/import" && method === "POST") {
+      await handleImport(req, res);
     } else if (!pathname.startsWith("/api/")) {
       // Static files
       serveStatic(res, pathname);

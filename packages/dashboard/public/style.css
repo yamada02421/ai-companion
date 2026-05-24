@@ -774,6 +774,31 @@ mark.search-highlight {
   flex-shrink: 0;
 }
 
+/* ===== Data Management ===== */
+.data-mgmt-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.data-mgmt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.data-mgmt-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.data-mgmt-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* ===== Sidebar Collapse ===== */
 .sidebar-toggle {
   display: none;
@@ -839,4 +864,86 @@ mark.search-highlight {
     justify-content: flex-start;
     padding: 12px 24px;
   }
+}
+
+/* ===== Characters Grid ===== */
+.characters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.char-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.char-card:hover {
+  border-color: var(--border-light);
+}
+
+.char-card-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.char-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.char-card-avatar {
+  font-size: 1.6rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.char-card-names {
+  flex: 1;
+  min-width: 0;
+}
+
+.char-card-display {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.char-card-id {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.char-card-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  background: var(--accent-glow);
+  padding: 3px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.char-card-personality {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  min-height: 1.5em;
+}
+
+.char-card-actions {
+  display: flex;
+  justify-content: flex-end;
 }

@@ -61,6 +61,7 @@ function switchSection(name) {
     startMemoryAutoRefresh();
   }
   if (name === "news") loadNews();
+  if (name === "characters") loadCharacters();
   if (name === "settings") loadSettings();
 }
 
@@ -474,6 +475,76 @@ async function loadNews(isAutoRefresh = false) {
   }
 }
 
+// ===== Characters =====
+async function loadCharacters() {
+  const container = document.getElementById("charactersList");
+  showSpinner("spinnerCharacters");
+
+  try {
+    const data = await apiFetch("/api/characters");
+    const characters = data.characters || [];
+    const active = data.active || "";
+
+    if (characters.length === 0) {
+      container.innerHTML = renderEmptyState("&#128101;", "キャラクターが見つかりません");
+      return;
+    }
+
+    container.innerHTML = characters
+      .map((ch) => {
+        const isActive = ch.name === active;
+        return `
+          <div class="char-card ${isActive ? "char-card-active" : ""}">
+            <div class="char-card-header">
+              <span class="char-card-avatar">${isActive ? "&#9670;" : "&#9671;"}</span>
+              <div class="char-card-names">
+                <div class="char-card-display">${escapeHtml(ch.display_name || ch.name)}</div>
+                <div class="char-card-id">${escapeHtml(ch.name)}</div>
+              </div>
+              ${isActive ? '<span class="char-card-badge">Active</span>' : ""}
+            </div>
+            <div class="char-card-personality">${escapeHtml(ch.personality || "")}</div>
+            <div class="char-card-actions">
+              ${isActive
+                ? '<button class="btn btn-secondary" disabled>使用中</button>'
+                : `<button class="btn btn-primary btn-switch-char" data-name="${escapeAttr(ch.name)}">切り替え</button>`
+              }
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    // Attach switch handlers
+    container.querySelectorAll(".btn-switch-char").forEach((btn) => {
+      btn.addEventListener("click", () => switchCharacter(btn.dataset.name));
+    });
+  } catch (e) {
+    container.innerHTML = renderEmptyState("!", "キャラクター一覧の読み込みに失敗しました");
+  } finally {
+    hideSpinner("spinnerCharacters");
+  }
+}
+
+async function switchCharacter(name) {
+  try {
+    await apiFetch("/api/character/active", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+
+    // Reload character list to reflect new active state
+    loadCharacters();
+
+    // Update header with new character name
+    charNameEl.textContent = name;
+    document.title = `${name} - Dashboard`;
+  } catch (e) {
+    alert("キャラクターの切り替えに失敗しました: " + e.message);
+  }
+}
+
 // ===== Settings =====
 async function loadSettings() {
   const charInfo = document.getElementById("charInfo");
@@ -626,6 +697,7 @@ document.getElementById("refreshHistory").addEventListener("click", () => loadHi
 document.getElementById("refreshAffinity").addEventListener("click", () => loadAffinity());
 document.getElementById("refreshMemory").addEventListener("click", () => loadMemory());
 document.getElementById("refreshNews").addEventListener("click", () => loadNews());
+document.getElementById("refreshCharacters").addEventListener("click", () => loadCharacters());
 
 // ===== Utility =====
 function escapeHtml(str) {
@@ -662,6 +734,103 @@ function renderEmptyState(icon, text) {
     </div>
   `;
 }
+
+// ===== Data Export / Import =====
+document.getElementById("exportData").addEventListener("click", async () => {
+  const statusEl = document.getElementById("dataMgmtStatus");
+  try {
+    const res = await fetch("/api/export");
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    // Extract filename from Content-Disposition header, or use fallback
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch
+      ? filenameMatch[1]
+      : `companion-export-${new Date().toISOString().slice(0, 10)}.json`;
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    statusEl.textContent = "エクスポートしました";
+    statusEl.style.color = "var(--success)";
+    statusEl.classList.add("show");
+    setTimeout(() => statusEl.classList.remove("show"), 2500);
+  } catch (e) {
+    statusEl.textContent = "エクスポートに失敗しました";
+    statusEl.style.color = "var(--danger)";
+    statusEl.classList.add("show");
+    setTimeout(() => {
+      statusEl.classList.remove("show");
+      statusEl.style.color = "";
+    }, 3000);
+  }
+});
+
+document.getElementById("importDataBtn").addEventListener("click", () => {
+  document.getElementById("importFileInput").click();
+});
+
+document.getElementById("importFileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const statusEl = document.getElementById("dataMgmtStatus");
+
+  // Confirm before overwrite
+  if (!confirm("インポートすると現在のデータが上書きされます。続行しますか？")) {
+    e.target.value = "";
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    // Validate JSON before sending
+    const parsed = JSON.parse(text);
+    if (!parsed.version) {
+      throw new Error("無効なエクスポートファイルです（versionフィールドがありません）");
+    }
+
+    const res = await fetch("/api/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: text,
+    });
+
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result.error || "Import failed");
+    }
+
+    statusEl.textContent = "インポートしました。データが復元されました。";
+    statusEl.style.color = "var(--success)";
+    statusEl.classList.add("show");
+    setTimeout(() => statusEl.classList.remove("show"), 3000);
+
+    // Reload current section data
+    loadHistory();
+    loadAffinity();
+    loadMemory();
+  } catch (e) {
+    statusEl.textContent = "インポートに失敗しました: " + e.message;
+    statusEl.style.color = "var(--danger)";
+    statusEl.classList.add("show");
+    setTimeout(() => {
+      statusEl.classList.remove("show");
+      statusEl.style.color = "";
+    }, 4000);
+  }
+
+  // Reset file input so the same file can be selected again
+  e.target.value = "";
+});
 
 // ===== Init =====
 loadHistory();

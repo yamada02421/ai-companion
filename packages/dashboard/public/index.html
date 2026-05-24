@@ -43,9 +43,21 @@
           </button>
         </li>
         <li>
+          <button class="nav-btn" data-section="timeline">
+            <span class="nav-icon">&#128337;</span>
+            <span class="nav-label">タイムライン</span>
+          </button>
+        </li>
+        <li>
           <button class="nav-btn" data-section="news">
             <span class="nav-icon">&#128240;</span>
             <span class="nav-label">ニュース</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-section="characters">
+            <span class="nav-icon">&#128101;</span>
+            <span class="nav-label">キャラ</span>
           </button>
         </li>
         <li>
@@ -147,6 +159,23 @@
         </div>
       </section>
 
+      <!-- Timeline Section -->
+      <section id="section-timeline" class="section">
+        <div class="section-header">
+          <h2>タイムライン</h2>
+          <div class="section-header-actions">
+            <input type="date" id="timelineDateFilter" class="timeline-date-input">
+            <span class="spinner" id="spinnerTimeline"></span>
+            <button class="btn btn-secondary" id="refreshTimeline">更新</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="timelineList" class="timeline-list">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+      </section>
+
       <!-- News / Curator History Section -->
       <section id="section-news" class="section">
         <div class="section-header">
@@ -160,6 +189,20 @@
           <div id="newsList" class="news-list">
             <p class="placeholder">読み込み中...</p>
           </div>
+        </div>
+      </section>
+
+      <!-- Characters Section -->
+      <section id="section-characters" class="section">
+        <div class="section-header">
+          <h2>キャラクター</h2>
+          <div class="section-header-actions">
+            <span class="spinner" id="spinnerCharacters"></span>
+            <button class="btn btn-secondary" id="refreshCharacters">更新</button>
+          </div>
+        </div>
+        <div id="charactersList" class="characters-grid">
+          <p class="placeholder">読み込み中...</p>
         </div>
       </section>
 
@@ -189,6 +232,24 @@
         <div class="settings-actions">
           <button class="btn btn-primary" id="saveSettings">保存</button>
           <span id="saveStatus" class="save-status"></span>
+        </div>
+
+        <!-- Data Management Card -->
+        <div class="card" id="dataManagementCard">
+          <h3>データ管理</h3>
+          <p class="data-mgmt-desc">会話履歴・ユーザー記憶・好感度をJSONファイルとしてバックアップ・復元できます。</p>
+          <div class="data-mgmt-actions">
+            <div class="data-mgmt-row">
+              <button class="btn btn-primary" id="exportData">データエクスポート</button>
+              <span class="data-mgmt-hint">全データをJSONファイルとしてダウンロード</span>
+            </div>
+            <div class="data-mgmt-row">
+              <button class="btn btn-secondary" id="importDataBtn">データインポート</button>
+              <input type="file" id="importFileInput" accept=".json" style="display: none;">
+              <span class="data-mgmt-hint">JSONファイルからデータを復元（上書き）</span>
+            </div>
+          </div>
+          <span id="dataMgmtStatus" class="save-status"></span>
         </div>
       </section>
     </main>

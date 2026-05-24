@@ -33,3 +33,9 @@ export {
 } from "./affinity.js";
 export { ScreenCapture } from "./screen-capture.js";
 export { ScreenObserver } from "./screen-observer.js";
+export { DataManager, type ExportData } from "./data-manager.js";
+export {
+  TimelineManager,
+  type TimelineEvent,
+  type TimelineEventType,
+} from "./timeline.js";
