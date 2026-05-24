@@ -108,6 +108,13 @@ function serveStatic(
 
 // ---------- API Handlers ----------
 
+/** GET /api/affinity */
+function handleGetAffinity(res: http.ServerResponse): void {
+  const affinityPath = path.join(STATE_DIR, `${CHAR_NAME}-affinity.json`);
+  const data = readJsonFile(affinityPath);
+  sendJson(res, 200, { charName: CHAR_NAME, affinity: data || null });
+}
+
 /** GET /api/history */
 function handleGetHistory(res: http.ServerResponse): void {
   const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
@@ -241,7 +248,9 @@ const server = http.createServer(async (req, res) => {
 
   try {
     // API routes
-    if (pathname === "/api/history" && method === "GET") {
+    if (pathname === "/api/affinity" && method === "GET") {
+      handleGetAffinity(res);
+    } else if (pathname === "/api/history" && method === "GET") {
       handleGetHistory(res);
     } else if (pathname === "/api/user-memory" && method === "GET") {
       handleGetUserMemory(res);

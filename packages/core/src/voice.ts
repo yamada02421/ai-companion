@@ -105,7 +105,7 @@ export class VoiceSynthesizer {
   }
 }
 
-function playAudio(filePath: string): Promise<void> {
+export function playAudio(filePath: string): Promise<void> {
   return new Promise((resolve) => {
     const escaped = filePath.replace(/'/g, "''");
     exec(

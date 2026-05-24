@@ -4,6 +4,7 @@ import { buildSystemPrompt } from "./character.js";
 import { MemoryManager } from "./memory.js";
 import type { OpenPetsReaction } from "./openpets.js";
 import { UserMemoryManager } from "./user-memory.js";
+import { AffinityManager } from "./affinity.js";
 
 export interface Message {
   role: "user" | "assistant";
@@ -14,6 +15,17 @@ export interface CompanionResponse {
   text: string;
   reaction: OpenPetsReaction;
 }
+
+const MILESTONE_LABELS: Record<string, string> = {
+  first_chat: "初めての会話を達成しました！",
+  level_10: "好感度10に到達しました！",
+  level_25: "好感度25に到達しました！",
+  level_50: "好感度50に到達しました！",
+  level_75: "好感度75に到達しました！",
+  level_100: "好感度MAXに到達しました！",
+  streak_7: "7日連続会話を達成しました！",
+  streak_30: "30日連続会話を達成しました！",
+};
 
 const REACTION_INSTRUCTION = `
 
@@ -37,6 +49,7 @@ export class CompanionAI {
   private systemPrompt: string;
   private memory: MemoryManager | null = null;
   private userMemory: UserMemoryManager | null = null;
+  private affinity: AffinityManager | null = null;
 
   constructor(character: Character, apiKey?: string, historyPath?: string) {
     this.client = new Anthropic({ apiKey });
@@ -51,13 +64,15 @@ export class CompanionAI {
         character.name,
         stateDir,
       );
+      this.affinity = new AffinityManager(stateDir, character.name);
     }
   }
 
   private buildSystemMessages(): Anthropic.Messages.TextBlockParam[] {
     const memoryContext = this.memory?.getMemoryContext() ?? "";
     const userMemoryContext = this.userMemory?.getMemoryContext() ?? "";
-    const contextParts = [memoryContext, userMemoryContext]
+    const affinityContext = this.affinity?.getMoodContext() ?? "";
+    const contextParts = [memoryContext, userMemoryContext, affinityContext]
       .filter(Boolean)
       .join("\n\n");
     const fullPrompt = contextParts
@@ -90,6 +105,9 @@ export class CompanionAI {
   }
 
   async chat(userMessage: string): Promise<CompanionResponse> {
+    // Record interaction for affinity tracking
+    this.affinity?.recordInteraction();
+
     this.memory?.addMessage({ role: "user", content: userMessage });
 
     const messages = this.memory?.getActiveHistory() ?? [];
@@ -104,6 +122,15 @@ export class CompanionAI {
     const raw =
       response.content[0].type === "text" ? response.content[0].text : "";
     const result = this.parseResponse(raw);
+
+    // Append milestone notifications to response if any
+    const newMilestones = this.affinity?.getNewMilestones() ?? [];
+    if (newMilestones.length > 0) {
+      const milestoneText = newMilestones
+        .map((m) => MILESTONE_LABELS[m] ?? m)
+        .join("、");
+      result.text += `\n\n[${milestoneText}]`;
+    }
 
     this.memory?.addMessage({ role: "assistant", content: result.text });
     await this.memory?.compactIfNeeded();
@@ -157,5 +184,9 @@ export class CompanionAI {
 
   getCharacterName(): string {
     return this.character.display_name;
+  }
+
+  getAffinityManager(): AffinityManager | null {
+    return this.affinity;
   }
 }

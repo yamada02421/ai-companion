@@ -20,12 +20,36 @@ export interface RVCSettings {
   pitch?: number;
 }
 
+export interface FishSpeechSettings {
+  reference_id?: string;
+  chunk_length?: number;
+  temperature?: number;
+  prosody?: {
+    speed?: number;
+    volume?: number;
+  };
+  default_emotion?: string;
+  emotion_map?: Record<string, string>;
+}
+
 export interface VoiceSettings {
+  engine?: string;  // "aivisspeech" | "fish-speech"
   speaker_id?: number;
   speed?: number;
   pitch?: number;
   volume?: number;
   rvc?: RVCSettings;
+  fish_speech?: FishSpeechSettings;
+}
+
+export interface PetDisplaySettings {
+  /** 使用するペットエンジン */
+  pet_engine?: "openpets" | "vivipet";
+  /** ViviPet 固有の設定 */
+  vivipet?: {
+    host?: string;
+    tts_enabled?: boolean;
+  };
 }
 
 export interface Character {
@@ -39,6 +63,7 @@ export interface Character {
   news_comment_style: string;
   emotion_bias?: EmotionBias;
   voice?: VoiceSettings;
+  pet_display?: PetDisplaySettings;
 }
 
 export function loadCharacter(filePath: string): Character {

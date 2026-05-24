@@ -6,10 +6,11 @@ import {
   CompanionAI,
   loadCharacter,
   OpenPetsClient,
-  VoiceSynthesizer,
+  UnifiedVoiceSynthesizer,
   NewsCurator,
   setLogDir,
 } from "@ai-companion/core";
+import type { VoiceEngine } from "@ai-companion/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "../../..");
@@ -28,11 +29,23 @@ const historyPath = resolve(stateDir, `${charName}-history.json`);
 const character = loadCharacter(charPath);
 const ai = new CompanionAI(character, undefined, historyPath);
 const openpets = new OpenPetsClient();
-const voice = new VoiceSynthesizer({
-  speakerId: character.voice?.speaker_id,
-  speedScale: character.voice?.speed,
-  pitchScale: character.voice?.pitch,
-  volumeScale: character.voice?.volume,
+const voiceEngine = (character.voice?.engine ?? "aivisspeech") as VoiceEngine;
+const voice = new UnifiedVoiceSynthesizer({
+  engine: voiceEngine,
+  aivisspeech: {
+    speakerId: character.voice?.speaker_id,
+    speedScale: character.voice?.speed,
+    pitchScale: character.voice?.pitch,
+    volumeScale: character.voice?.volume,
+  },
+  fishSpeech: character.voice?.fish_speech
+    ? {
+        referenceId: character.voice.fish_speech.reference_id,
+        chunkLength: character.voice.fish_speech.chunk_length,
+        temperature: character.voice.fish_speech.temperature,
+        prosody: character.voice.fish_speech.prosody,
+      }
+    : undefined,
 });
 
 async function run() {
