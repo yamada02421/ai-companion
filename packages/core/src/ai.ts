@@ -3,6 +3,7 @@ import type { Character } from "./character.js";
 import { buildSystemPrompt } from "./character.js";
 import { MemoryManager } from "./memory.js";
 import type { OpenPetsReaction } from "./openpets.js";
+import { UserMemoryManager } from "./user-memory.js";
 
 export interface Message {
   role: "user" | "assistant";
@@ -35,6 +36,7 @@ export class CompanionAI {
   private character: Character;
   private systemPrompt: string;
   private memory: MemoryManager | null = null;
+  private userMemory: UserMemoryManager | null = null;
 
   constructor(character: Character, apiKey?: string, historyPath?: string) {
     this.client = new Anthropic({ apiKey });
@@ -43,13 +45,23 @@ export class CompanionAI {
 
     if (historyPath) {
       this.memory = new MemoryManager(historyPath, apiKey);
+      const stateDir = historyPath.replace(/[\\/][^\\/]+$/, "");
+      this.userMemory = new UserMemoryManager(
+        this.client,
+        character.name,
+        stateDir,
+      );
     }
   }
 
   private buildSystemMessages(): Anthropic.Messages.TextBlockParam[] {
     const memoryContext = this.memory?.getMemoryContext() ?? "";
-    const fullPrompt = memoryContext
-      ? `${this.systemPrompt}\n\n${memoryContext}`
+    const userMemoryContext = this.userMemory?.getMemoryContext() ?? "";
+    const contextParts = [memoryContext, userMemoryContext]
+      .filter(Boolean)
+      .join("\n\n");
+    const fullPrompt = contextParts
+      ? `${this.systemPrompt}\n\n${contextParts}`
       : this.systemPrompt;
 
     return [
@@ -95,6 +107,15 @@ export class CompanionAI {
 
     this.memory?.addMessage({ role: "assistant", content: result.text });
     await this.memory?.compactIfNeeded();
+
+    // Extract user facts in background (non-blocking)
+    // extractAndSave has internal try/catch, but add .catch as safety net
+    // to prevent unhandled promise rejection if the method is refactored later
+    if (this.userMemory) {
+      void this.userMemory
+        .extractAndSave(userMessage, result.text)
+        .catch(() => {});
+    }
 
     return result;
   }

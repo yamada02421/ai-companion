@@ -9,6 +9,42 @@ try {
 } catch {}
 $now | Out-File $cooldownFile -Force
 
+# --- 開発モード: 短い完了通知のみ（AIなし・音声なし） ---
+# 通常モードに戻すには DEV_MODE の行を削除する
+$DEV_MODE = $true
+
+if ($DEV_MODE) {
+    try {
+        $ipcPath = Join-Path $env:APPDATA "OpenPets\runtime\ipc.json"
+        if (-not (Test-Path $ipcPath)) { exit 0 }
+        $ipc = Get-Content $ipcPath -Raw | ConvertFrom-Json
+        $pipeName = $ipc.endpoint -replace '^\\\\\.\\pipe\\', ''
+        if (-not $pipeName) { exit 0 }
+
+        function Send-Req {
+            param([string]$PipeName, [string]$Method, [hashtable]$Params)
+            $p = [System.IO.Pipes.NamedPipeClientStream]::new('.', $PipeName, [System.IO.Pipes.PipeDirection]::InOut)
+            try {
+                $p.Connect(2000)
+                $w = [System.IO.StreamWriter]::new($p); $r = [System.IO.StreamReader]::new($p); $w.AutoFlush = $true
+                $w.WriteLine((@{ id=[guid]::NewGuid().ToString(); version=$ipc.protocolVersion; token=$ipc.token; method=$Method; params=$Params } | ConvertTo-Json -Compress))
+                return ($r.ReadLine() | ConvertFrom-Json)
+            } finally { $p.Dispose() }
+        }
+
+        $lease = Send-Req -PipeName $pipeName -Method "lease.acquire" -Params @{}
+        if ($lease.ok) {
+            Send-Req -PipeName $pipeName -Method "pet.say" -Params @{
+                message = "タスク完了"
+                reaction = "success"
+                leaseId = $lease.result.leaseId
+            } | Out-Null
+        }
+    } catch {}
+    exit 0
+}
+
+# --- 通常モード ---
 # タスク完了通知 — AI が作業内容を見てコメント
 try {
     & npx tsx "$projectRoot/packages/terminal/src/summarize-work.ts" 2>$null

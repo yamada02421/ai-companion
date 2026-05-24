@@ -8,6 +8,8 @@ export { ContentCache } from "./cache.js";
 export { OpenPetsClient, type OpenPetsReaction } from "./openpets.js";
 export { detectEmotion } from "./emotion.js";
 export { MemoryManager, type ConversationMemory } from "./memory.js";
+export { UserMemoryManager, type UserFact, type UserMemoryState, type FactCategory } from "./user-memory.js";
 export { VoiceSynthesizer, type VoiceConfig } from "./voice.js";
 export { VoiceConverter, type RVCConfig } from "./rvc.js";
 export { setLogDir, logError } from "./logger.js";
+export { NewsCurator, type CuratedArticle } from "./curator.js";

@@ -13,6 +13,7 @@ import {
   ContentCache,
   OpenPetsClient,
   VoiceSynthesizer,
+  NewsCurator,
 } from "@ai-companion/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -69,11 +70,11 @@ const voice = new VoiceSynthesizer({
 const CACHE_30MIN = 30 * 60 * 1000;
 const CACHE_1HOUR = 60 * 60 * 1000;
 
-type Mode = "news" | "qiita" | "work" | "casual";
+type Mode = "news" | "qiita" | "work" | "casual" | "curate";
 
 // --- #4: 時間帯別モード選択 ---
 function pickMode(): Mode {
-  if (mode && ["news", "qiita", "work", "casual"].includes(mode)) {
+  if (mode && ["news", "qiita", "work", "casual", "curate"].includes(mode)) {
     return mode as Mode;
   }
   const hour = new Date().getHours();
@@ -93,8 +94,8 @@ function pickMode(): Mode {
     if (elapsed > 2 * 60 * 60 * 1000 && Math.random() < 0.5) return "casual";
   } catch {}
 
-  const modes: Mode[] = ["news", "qiita", "work", "casual"];
-  const weights = [3, 3, 2, 2];
+  const modes: Mode[] = ["news", "qiita", "work", "casual", "curate"];
+  const weights = [2, 3, 2, 2, 3];
   const total = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * total;
   for (let i = 0; i < modes.length; i++) {
@@ -226,6 +227,24 @@ async function run() {
       reaction = "working";
       break;
     }
+    case "curate": {
+      const curator = new NewsCurator(stateDir);
+      const article = await curator.curate();
+      if (!article) {
+        // Curator throttled or no new articles — fall back to casual
+        context = getCasualContext();
+        reaction = "waving";
+        break;
+      }
+      context = `注目ニュースを紹介してください:
+タイトル: ${article.title}
+ソース: ${article.source}
+注目理由: ${article.reason}
+
+キャラクターとして1-2文で紹介してください。`;
+      reaction = "thinking";
+      break;
+    }
     case "casual": {
       context = getCasualContext();
       reaction = "waving";
@@ -236,7 +255,7 @@ async function run() {
   if (!context) process.exit(0);
 
   const { text, reaction: aiReaction } = await ai.proactiveMessage(context);
-  const label = { news: "📰", qiita: "📝", work: "💻", casual: "💬" }[selected];
+  const label = { news: "📰", qiita: "📝", work: "💻", casual: "💬", curate: "🗞️" }[selected];
   console.log(`\n${label} ${character.display_name}: ${text}`);
 
   // ステート保存
