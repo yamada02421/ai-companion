@@ -213,4 +213,8 @@ export class CompanionAI {
   getTimelineManager(): TimelineManager | null {
     return this.timeline;
   }
+
+  getMemoryManager(): MemoryManager | null {
+    return this.memory;
+  }
 }
