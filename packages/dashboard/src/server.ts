@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import net from "node:net";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
@@ -190,6 +191,38 @@ function importAllData(data: ImportPayload): void {
   }
 }
 
+// ---------- Notification Settings Helpers ----------
+
+const NOTIFICATION_SETTINGS_FILE = path.join(STATE_DIR, "notification-settings.json");
+
+interface NotificationSettings {
+  soundEnabled: boolean;
+  toastEnabled: boolean;
+}
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  soundEnabled: true,
+  toastEnabled: true,
+};
+
+function readNotificationSettings(): NotificationSettings {
+  try {
+    const raw = fs.readFileSync(NOTIFICATION_SETTINGS_FILE, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<NotificationSettings>;
+    return {
+      soundEnabled: parsed.soundEnabled ?? DEFAULT_NOTIFICATION_SETTINGS.soundEnabled,
+      toastEnabled: parsed.toastEnabled ?? DEFAULT_NOTIFICATION_SETTINGS.toastEnabled,
+    };
+  } catch {
+    return { ...DEFAULT_NOTIFICATION_SETTINGS };
+  }
+}
+
+function writeNotificationSettings(settings: NotificationSettings): void {
+  try { fs.mkdirSync(STATE_DIR, { recursive: true }); } catch {}
+  fs.writeFileSync(NOTIFICATION_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+}
+
 // ---------- API Handlers ----------
 
 /** GET /api/affinity */
@@ -291,6 +324,36 @@ function handleGetTimeline(
   const limit = limitParam ? parseInt(limitParam, 10) : 50;
   const latest = events.slice(-limit).reverse();
   sendJson(res, 200, { charName: CHAR_NAME, events: latest });
+}
+
+/** GET /api/history/search?q=keyword */
+function handleSearchHistory(
+  res: http.ServerResponse,
+  url: URL
+): void {
+  const keyword = url.searchParams.get("q")?.trim();
+  if (!keyword) {
+    sendJson(res, 400, { error: "Missing 'q' query parameter" });
+    return;
+  }
+
+  const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
+  const raw = readJsonFile(historyPath) as Array<{ role: string; content: string }> | null;
+  const history = Array.isArray(raw) ? raw : [];
+
+  const lower = keyword.toLowerCase();
+  const results = history.filter((m) =>
+    typeof m.content === "string" && m.content.toLowerCase().includes(lower),
+  );
+
+  sendJson(res, 200, { charName: CHAR_NAME, keyword, results });
+}
+
+/** GET /api/memory */
+function handleGetConversationMemory(res: http.ServerResponse): void {
+  const memoryPath = path.join(STATE_DIR, `${CHAR_NAME}-history-memory.json`);
+  const data = readJsonFile(memoryPath);
+  sendJson(res, 200, { charName: CHAR_NAME, memory: data || null });
 }
 
 /** GET /api/curator-history */
@@ -440,6 +503,164 @@ async function handleImport(
   }
 }
 
+/** GET /api/notification-settings */
+function handleGetNotificationSettings(res: http.ServerResponse): void {
+  const settings = readNotificationSettings();
+  sendJson(res, 200, { settings });
+}
+
+/** PUT /api/notification-settings */
+async function handlePutNotificationSettings(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  try {
+    const body = await parseBody(req);
+    const updates = JSON.parse(body) as Partial<NotificationSettings>;
+    const current = readNotificationSettings();
+
+    if (updates.soundEnabled !== undefined) {
+      current.soundEnabled = updates.soundEnabled;
+    }
+    if (updates.toastEnabled !== undefined) {
+      current.toastEnabled = updates.toastEnabled;
+    }
+
+    writeNotificationSettings(current);
+    sendJson(res, 200, { success: true, settings: current });
+  } catch {
+    sendJson(res, 400, { error: "Invalid request body" });
+  }
+}
+
+// ---------- Health Check ----------
+
+interface ServiceStatus {
+  name: string;
+  status: "ok" | "down" | "unknown";
+  latency?: number;
+  details?: string;
+}
+
+const HEALTH_TIMEOUT = 2000;
+
+async function httpHealthCheck(
+  url: string,
+  timeoutMs: number,
+): Promise<{ ok: boolean; elapsed: number }> {
+  const start = performance.now();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    return { ok: res.ok, elapsed: Math.round(performance.now() - start) };
+  } catch {
+    return { ok: false, elapsed: Math.round(performance.now() - start) };
+  }
+}
+
+async function checkOpenPetsHealth(): Promise<ServiceStatus> {
+  const configPath = path.join(
+    process.env.APPDATA ?? "",
+    "OpenPets",
+    "runtime",
+    "ipc.json",
+  );
+  if (!fs.existsSync(configPath)) {
+    return { name: "OpenPets", status: "down", details: "IPC config not found" };
+  }
+
+  const start = performance.now();
+  try {
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const config = JSON.parse(raw) as {
+      protocolVersion: number;
+      endpoint: string;
+      token: string;
+    };
+
+    const result = await new Promise<boolean>((resolve) => {
+      const socket = net.connect(config.endpoint);
+      let data = "";
+      socket.setTimeout(HEALTH_TIMEOUT);
+      socket.on("connect", () => {
+        socket.write(
+          JSON.stringify({
+            id: "health-check",
+            version: config.protocolVersion,
+            token: config.token,
+            method: "lease.acquire",
+            params: {},
+          }) + "\n",
+        );
+      });
+      socket.on("data", (chunk) => {
+        data += chunk.toString();
+        if (data.includes("\n")) {
+          try {
+            resolve(JSON.parse(data.split("\n")[0]).ok === true);
+          } catch {
+            resolve(false);
+          }
+          socket.destroy();
+        }
+      });
+      socket.on("timeout", () => { socket.destroy(); resolve(false); });
+      socket.on("error", () => resolve(false));
+    });
+
+    const elapsed = Math.round(performance.now() - start);
+    return {
+      name: "OpenPets",
+      status: result ? "ok" : "down",
+      latency: elapsed,
+      details: result ? "IPC connected" : "lease.acquire failed",
+    };
+  } catch {
+    return {
+      name: "OpenPets",
+      status: "down",
+      latency: Math.round(performance.now() - start),
+      details: "IPC connection error",
+    };
+  }
+}
+
+async function runHealthChecks(): Promise<ServiceStatus[]> {
+  const httpChecks: Array<{ name: string; url: string }> = [
+    { name: "AivisSpeech", url: "http://127.0.0.1:10101/version" },
+    { name: "Fish Speech S2", url: "http://127.0.0.1:8080/v1/health" },
+    { name: "ViviPet", url: "http://localhost:18765/adapter" },
+    { name: "Dashboard", url: `http://127.0.0.1:${PORT}/api/settings` },
+  ];
+
+  const httpResults = httpChecks.map(async ({ name, url }) => {
+    const { ok, elapsed } = await httpHealthCheck(url, HEALTH_TIMEOUT);
+    return {
+      name,
+      status: ok ? "ok" : "down",
+      latency: elapsed,
+      details: ok ? "responding" : "unreachable",
+    } as ServiceStatus;
+  });
+
+  const [openPetsResult, ...rest] = await Promise.all([
+    checkOpenPetsHealth(),
+    ...httpResults,
+  ]);
+
+  // Reorder: AivisSpeech, Fish Speech S2, OpenPets, ViviPet, Dashboard
+  return [rest[0], rest[1], openPetsResult, rest[2], rest[3]];
+}
+
+/** GET /api/health */
+async function handleGetHealth(res: http.ServerResponse): Promise<void> {
+  try {
+    const services = await runHealthChecks();
+    sendJson(res, 200, { services });
+  } catch {
+    sendJson(res, 500, { error: "Health check failed" });
+  }
+}
+
 // ---------- Request Router ----------
 
 const server = http.createServer(async (req, res) => {
@@ -462,8 +683,12 @@ const server = http.createServer(async (req, res) => {
     // API routes
     if (pathname === "/api/affinity" && method === "GET") {
       handleGetAffinity(res);
+    } else if (pathname === "/api/history/search" && method === "GET") {
+      handleSearchHistory(res, url);
     } else if (pathname === "/api/history" && method === "GET") {
       handleGetHistory(res);
+    } else if (pathname === "/api/memory" && method === "GET") {
+      handleGetConversationMemory(res);
     } else if (pathname === "/api/user-memory" && method === "GET") {
       handleGetUserMemory(res);
     } else if (
@@ -490,6 +715,12 @@ const server = http.createServer(async (req, res) => {
       handleExport(res);
     } else if (pathname === "/api/import" && method === "POST") {
       await handleImport(req, res);
+    } else if (pathname === "/api/notification-settings" && method === "GET") {
+      handleGetNotificationSettings(res);
+    } else if (pathname === "/api/notification-settings" && method === "PUT") {
+      await handlePutNotificationSettings(req, res);
+    } else if (pathname === "/api/health" && method === "GET") {
+      await handleGetHealth(res);
     } else if (!pathname.startsWith("/api/")) {
       // Static files
       serveStatic(res, pathname);

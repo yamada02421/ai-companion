@@ -10,6 +10,7 @@ import {
   NewsCurator,
   setLogDir,
   TimelineManager,
+  NotificationManager,
 } from "@ai-companion/core";
 import type { VoiceEngine } from "@ai-companion/core";
 
@@ -50,6 +51,7 @@ const voice = new UnifiedVoiceSynthesizer({
 });
 
 const timeline = new TimelineManager(stateDir, charName);
+const notifier = new NotificationManager(stateDir);
 
 async function run() {
   const curator = new NewsCurator(stateDir);
@@ -79,10 +81,15 @@ async function run() {
   // Record curate event on the timeline
   timeline.addEvent("curate", article.title, `${text}\n\nSource: ${article.source}\nURL: ${article.url}`);
 
-  // OpenPets notification + voice in parallel
+  // OpenPets notification + voice + toast in parallel
   await Promise.all([
     openpets.say(text, reaction).catch(() => {}),
     voice.speak(text, stateDir).catch(() => {}),
+    notifier.notify(
+      `📰 ${article.source}`,
+      article.title,
+      "news",
+    ).catch(() => {}),
   ]);
   await openpets.react("idle").catch(() => {});
 }

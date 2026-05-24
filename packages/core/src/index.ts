@@ -7,7 +7,7 @@ export { fetchQiitaTrending, formatQiitaContext, type QiitaItem } from "./qiita.
 export { ContentCache } from "./cache.js";
 export { OpenPetsClient, type OpenPetsReaction } from "./openpets.js";
 export { detectEmotion } from "./emotion.js";
-export { MemoryManager, type ConversationMemory } from "./memory.js";
+export { MemoryManager, type ConversationMemory, type PinnedMessage } from "./memory.js";
 export { UserMemoryManager, type UserFact, type UserMemoryState, type FactCategory } from "./user-memory.js";
 export { VoiceSynthesizer, playAudio, type VoiceConfig } from "./voice.js";
 export { FishSpeechSynthesizer, type FishSpeechConfig } from "./fish-speech.js";
@@ -39,3 +39,12 @@ export {
   type TimelineEvent,
   type TimelineEventType,
 } from "./timeline.js";
+export {
+  NotificationManager,
+  type NotificationSettings,
+  type NotificationSoundType,
+} from "./notification.js";
+export {
+  HealthChecker,
+  type ServiceStatus,
+} from "./health.js";

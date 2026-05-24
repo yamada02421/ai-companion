@@ -17,8 +17,9 @@ import {
   ScreenCapture,
   ScreenObserver,
   TimelineManager,
+  NotificationManager,
 } from "@ai-companion/core";
-import type { VoiceEngine } from "@ai-companion/core";
+import type { VoiceEngine, NotificationSoundType } from "@ai-companion/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "../../..");
@@ -81,6 +82,7 @@ const voice = new UnifiedVoiceSynthesizer({
 });
 
 const timeline = new TimelineManager(stateDir, charName);
+const notifier = new NotificationManager(stateDir);
 
 const CACHE_30MIN = 30 * 60 * 1000;
 const CACHE_1HOUR = 60 * 60 * 1000;
@@ -297,6 +299,16 @@ async function run() {
   const timelineSummary = text.length > 80 ? text.slice(0, 80) + "..." : text;
   timeline.addEvent(timelineType, `[${selected}] ${timelineSummary}`, text);
 
+  // Map mode to notification sound type
+  const soundTypeMap: Record<Mode, NotificationSoundType> = {
+    news: "news",
+    qiita: "news",
+    work: "chat",
+    casual: "chat",
+    curate: "news",
+    observe: "chat",
+  };
+
   // ステート保存
   try { mkdirSync(stateDir, { recursive: true }); } catch {}
   writeFileSync(resolve(stateDir, "last-message.txt"), text, "utf-8");
@@ -305,6 +317,11 @@ async function run() {
   await Promise.all([
     openpets.say(text, aiReaction).catch(() => {}),
     voice.speak(text, stateDir).catch(() => {}),
+    notifier.notify(
+      `${character.display_name} - ${label}`,
+      text,
+      soundTypeMap[selected],
+    ).catch(() => {}),
   ]);
   await openpets.react("idle").catch(() => {});
 }

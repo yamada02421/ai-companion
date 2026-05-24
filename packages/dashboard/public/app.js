@@ -67,6 +67,7 @@ function switchSection(name) {
   }
   if (name === "news") loadNews();
   if (name === "characters") loadCharacters();
+  if (name === "status") loadStatus();
   if (name === "settings") loadSettings();
 }
 
@@ -711,6 +712,66 @@ async function switchCharacter(name) {
   }
 }
 
+// ===== Status =====
+const STATUS_COLORS = {
+  ok: "var(--success)",
+  down: "var(--danger)",
+  unknown: "var(--text-muted)",
+};
+
+const STATUS_LABELS = {
+  ok: "OK",
+  down: "Down",
+  unknown: "Unknown",
+};
+
+async function loadStatus() {
+  const container = document.getElementById("statusGrid");
+  showSpinner("spinnerStatus");
+
+  try {
+    const data = await apiFetch("/api/health");
+    const services = data.services || [];
+
+    if (services.length === 0) {
+      container.innerHTML = renderEmptyState("&#9889;", "サービス情報がありません");
+      return;
+    }
+
+    container.innerHTML = services
+      .map((svc) => {
+        const color = STATUS_COLORS[svc.status] || STATUS_COLORS.unknown;
+        const label = STATUS_LABELS[svc.status] || svc.status;
+        const latencyText = svc.latency !== undefined ? `${svc.latency} ms` : "--";
+        const detailsText = svc.details ? escapeHtml(svc.details) : "";
+
+        return `
+          <div class="status-card status-${escapeAttr(svc.status)}">
+            <div class="status-card-header">
+              <span class="status-indicator" style="background: ${color}; box-shadow: 0 0 8px ${color};"></span>
+              <span class="status-card-name">${escapeHtml(svc.name)}</span>
+            </div>
+            <div class="status-card-body">
+              <div class="status-card-badge" style="color: ${color}; border-color: ${color};">${label}</div>
+              <div class="status-card-latency">
+                <span class="status-latency-label">Latency</span>
+                <span class="status-latency-value">${latencyText}</span>
+              </div>
+              ${detailsText ? `<div class="status-card-details">${detailsText}</div>` : ""}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  } catch (e) {
+    container.innerHTML = renderEmptyState("!", "ステータスの取得に失敗しました");
+  } finally {
+    hideSpinner("spinnerStatus");
+  }
+}
+
+document.getElementById("refreshStatus").addEventListener("click", () => loadStatus());
+
 // ===== Settings =====
 async function loadSettings() {
   const charInfo = document.getElementById("charInfo");
@@ -734,6 +795,44 @@ async function loadSettings() {
   } catch (e) {
     charInfo.innerHTML =
       '<p class="placeholder">設定の読み込みに失敗しました</p>';
+  }
+
+  // Load notification settings
+  loadNotificationSettings();
+}
+
+async function loadNotificationSettings() {
+  try {
+    const data = await apiFetch("/api/notification-settings");
+    const settings = data.settings || {};
+
+    const toastToggle = document.getElementById("toggle-toast");
+    const soundToggle = document.getElementById("toggle-sound");
+
+    if (toastToggle) toastToggle.checked = settings.toastEnabled !== false;
+    if (soundToggle) soundToggle.checked = settings.soundEnabled !== false;
+  } catch (e) {
+    console.error("Failed to load notification settings:", e);
+  }
+}
+
+async function saveNotificationSettings() {
+  const toastToggle = document.getElementById("toggle-toast");
+  const soundToggle = document.getElementById("toggle-sound");
+
+  const payload = {
+    toastEnabled: toastToggle ? toastToggle.checked : true,
+    soundEnabled: soundToggle ? soundToggle.checked : true,
+  };
+
+  try {
+    await apiFetch("/api/notification-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.error("Failed to save notification settings:", e);
   }
 }
 
@@ -825,7 +924,15 @@ function renderVoiceSettings(voice) {
   });
 }
 
-// Save settings
+// Notification toggle auto-save on change
+["toggle-toast", "toggle-sound"].forEach((id) => {
+  const toggle = document.getElementById(id);
+  if (toggle) {
+    toggle.addEventListener("change", () => saveNotificationSettings());
+  }
+});
+
+// Save settings (voice + notification)
 document.getElementById("saveSettings").addEventListener("click", async () => {
   const statusEl = document.getElementById("saveStatus");
 
@@ -838,11 +945,14 @@ document.getElementById("saveSettings").addEventListener("click", async () => {
   });
 
   try {
-    await apiFetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voice }),
-    });
+    await Promise.all([
+      apiFetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice }),
+      }),
+      saveNotificationSettings(),
+    ]);
 
     statusEl.textContent = "保存しました";
     statusEl.classList.add("show");
