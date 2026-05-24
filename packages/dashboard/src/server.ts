@@ -223,13 +223,77 @@ function writeNotificationSettings(settings: NotificationSettings): void {
   fs.writeFileSync(NOTIFICATION_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
 }
 
+// ---------- Personality Evolution (inline to avoid cross-package dependency) ----------
+
+interface EvolutionStageInfo {
+  minLevel: number;
+  maxLevel: number;
+  label: string;
+  unlockedBehaviors: string[];
+}
+
+const EVOLUTION_STAGES: EvolutionStageInfo[] = [
+  {
+    minLevel: 0, maxLevel: 20, label: "知り合い",
+    unlockedBehaviors: ["基本的な挨拶", "質問への短い回答", "天気・ニュースの共有"],
+  },
+  {
+    minLevel: 21, maxLevel: 50, label: "友達",
+    unlockedBehaviors: ["基本的な挨拶", "質問への短い回答", "天気・ニュースの共有", "冗談・ツッコミ", "自分の好みの共有", "カジュアルな話題振り"],
+  },
+  {
+    minLevel: 51, maxLevel: 80, label: "親友",
+    unlockedBehaviors: ["基本的な挨拶", "質問への短い回答", "天気・ニュースの共有", "冗談・ツッコミ", "自分の好みの共有", "カジュアルな話題振り", "本音トーク", "心配・気遣い", "甘え表現", "過去の会話の参照"],
+  },
+  {
+    minLevel: 81, maxLevel: 100, label: "特別",
+    unlockedBehaviors: ["基本的な挨拶", "質問への短い回答", "天気・ニュースの共有", "冗談・ツッコミ", "自分の好みの共有", "カジュアルな話題振り", "本音トーク", "心配・気遣い", "甘え表現", "過去の会話の参照", "感情的に深い会話", "秘密の共有", "記念日の記憶", "名前呼び"],
+  },
+];
+
+function getEvolutionStage(level: number): EvolutionStageInfo {
+  const clamped = Math.max(0, Math.min(100, Math.floor(level)));
+  for (const stage of EVOLUTION_STAGES) {
+    if (clamped >= stage.minLevel && clamped <= stage.maxLevel) {
+      return stage;
+    }
+  }
+  return EVOLUTION_STAGES[0];
+}
+
+function getNextEvolutionStage(level: number): EvolutionStageInfo | null {
+  const current = getEvolutionStage(level);
+  const idx = EVOLUTION_STAGES.indexOf(current);
+  if (idx < EVOLUTION_STAGES.length - 1) {
+    return EVOLUTION_STAGES[idx + 1];
+  }
+  return null;
+}
+
 // ---------- API Handlers ----------
 
 /** GET /api/affinity */
 function handleGetAffinity(res: http.ServerResponse): void {
   const affinityPath = path.join(STATE_DIR, `${CHAR_NAME}-affinity.json`);
-  const data = readJsonFile(affinityPath);
-  sendJson(res, 200, { charName: CHAR_NAME, affinity: data || null });
+  const data = readJsonFile(affinityPath) as Record<string, unknown> | null;
+
+  // Compute evolution stage info
+  const level = (data && typeof data.level === "number") ? data.level : 0;
+  const currentStage = getEvolutionStage(level);
+  const nextStage = getNextEvolutionStage(level);
+  const levelsToNext = nextStage ? nextStage.minLevel - Math.floor(level) : 0;
+
+  const evolution = {
+    currentStage: currentStage.label,
+    minLevel: currentStage.minLevel,
+    maxLevel: currentStage.maxLevel,
+    unlockedBehaviors: currentStage.unlockedBehaviors,
+    nextStage: nextStage ? nextStage.label : null,
+    levelsToNext,
+    allStages: EVOLUTION_STAGES.map((s) => ({ label: s.label, minLevel: s.minLevel, maxLevel: s.maxLevel })),
+  };
+
+  sendJson(res, 200, { charName: CHAR_NAME, affinity: data || null, evolution });
 }
 
 /** GET /api/history */
@@ -533,6 +597,236 @@ async function handlePutNotificationSettings(
   }
 }
 
+// ---------- Stats ----------
+
+interface StatsHistoryMessage {
+  role: string;
+  content: string;
+  timestamp?: string;
+}
+
+interface StatsTimelineEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  summary: string;
+  details?: string;
+}
+
+interface StatsAffinityState {
+  level: number;
+  totalInteractions: number;
+  streak: number;
+  lastInteraction: string;
+  mood: string;
+  milestones: string[];
+}
+
+interface StatsUserMemoryState {
+  facts: Array<{
+    id: string;
+    category: string;
+    content: string;
+    createdAt: string;
+    confidence: number;
+  }>;
+  updatedAt: string;
+}
+
+interface StatsData {
+  totalMessages: number;
+  totalDays: number;
+  avgMessagesPerDay: number;
+  longestStreak: number;
+  currentStreak: number;
+  favoriteTopics: { topic: string; count: number }[];
+  activeHours: { hour: number; count: number }[];
+  weekdayActivity: { day: string; count: number }[];
+  moodHistory: { date: string; mood: string }[];
+  levelHistory: { date: string; level: number }[];
+}
+
+function calculateStats(): StatsData {
+  const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
+  const affinityPath = path.join(STATE_DIR, `${CHAR_NAME}-affinity.json`);
+  const timelinePath = path.join(STATE_DIR, `${CHAR_NAME}-timeline.json`);
+  const userMemoryPath = path.join(STATE_DIR, `${CHAR_NAME}-user-memory.json`);
+
+  const history = (readJsonFile(historyPath) as StatsHistoryMessage[] | null) ?? [];
+  const affinity = readJsonFile(affinityPath) as StatsAffinityState | null;
+  const timelineRaw = readJsonFile(timelinePath) as StatsTimelineEvent[] | null;
+  const timeline = Array.isArray(timelineRaw) ? timelineRaw : [];
+  const userMemory = readJsonFile(userMemoryPath) as StatsUserMemoryState | null;
+
+  const totalMessages = Array.isArray(history) ? history.length : 0;
+
+  // Calculate total days from timestamps
+  const dates = new Set<string>();
+  for (const msg of (Array.isArray(history) ? history : [])) {
+    if (msg.timestamp) {
+      const date = msg.timestamp.slice(0, 10);
+      if (date.length === 10) dates.add(date);
+    }
+  }
+  for (const evt of timeline) {
+    if (evt.timestamp) {
+      const date = evt.timestamp.slice(0, 10);
+      if (date.length === 10) dates.add(date);
+    }
+  }
+  const totalDays = dates.size || 1;
+  const avgMessagesPerDay = Math.round((totalMessages / totalDays) * 10) / 10;
+
+  // Streaks
+  const currentStreak = affinity?.streak ?? 0;
+  const chatDates = new Set<string>();
+  for (const evt of timeline) {
+    if (evt.type === "chat" && evt.timestamp) {
+      chatDates.add(evt.timestamp.slice(0, 10));
+    }
+  }
+  let longestStreak = currentStreak;
+  if (chatDates.size > 0) {
+    const sorted = [...chatDates].sort();
+    let longest = 1;
+    let streak = 1;
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = new Date(sorted[i - 1]);
+      const curr = new Date(sorted[i]);
+      const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays === 1) {
+        streak++;
+        if (streak > longest) longest = streak;
+      } else {
+        streak = 1;
+      }
+    }
+    longestStreak = Math.max(longest, currentStreak);
+  }
+
+  // Favorite topics from user memory categories
+  const favoriteTopics: { topic: string; count: number }[] = [];
+  if (userMemory && Array.isArray(userMemory.facts)) {
+    const categoryLabels: Record<string, string> = {
+      preference: "好み",
+      habit: "習慣",
+      work: "仕事",
+      interest: "興味",
+      personal: "個人情報",
+      other: "その他",
+    };
+    const categoryCount = new Map<string, number>();
+    for (const fact of userMemory.facts) {
+      const label = categoryLabels[fact.category] || fact.category;
+      categoryCount.set(label, (categoryCount.get(label) || 0) + 1);
+    }
+    for (const [topic, count] of categoryCount) {
+      favoriteTopics.push({ topic, count });
+    }
+    favoriteTopics.sort((a, b) => b.count - a.count);
+    favoriteTopics.splice(5);
+  }
+
+  // Active hours
+  const hourCounts = new Array(24).fill(0);
+  for (const msg of (Array.isArray(history) ? history : [])) {
+    if (msg.timestamp) {
+      try {
+        const d = new Date(msg.timestamp);
+        if (!isNaN(d.getTime())) hourCounts[d.getHours()]++;
+      } catch {}
+    }
+  }
+  for (const evt of timeline) {
+    if (evt.type === "chat" && evt.timestamp) {
+      try {
+        const d = new Date(evt.timestamp);
+        if (!isNaN(d.getTime())) hourCounts[d.getHours()]++;
+      } catch {}
+    }
+  }
+  const activeHours = hourCounts.map((count: number, hour: number) => ({ hour, count }));
+
+  // Weekday activity
+  const dayNames = ["日", "月", "火", "水", "木", "金", "土"];
+  const dayCounts = new Array(7).fill(0);
+  for (const msg of (Array.isArray(history) ? history : [])) {
+    if (msg.timestamp) {
+      try {
+        const d = new Date(msg.timestamp);
+        if (!isNaN(d.getTime())) dayCounts[d.getDay()]++;
+      } catch {}
+    }
+  }
+  for (const evt of timeline) {
+    if (evt.type === "chat" && evt.timestamp) {
+      try {
+        const d = new Date(evt.timestamp);
+        if (!isNaN(d.getTime())) dayCounts[d.getDay()]++;
+      } catch {}
+    }
+  }
+  const weekdayActivity = dayCounts.map((count: number, i: number) => ({ day: dayNames[i], count }));
+
+  // Mood history from timeline
+  const moodByDate = new Map<string, string>();
+  for (const evt of timeline) {
+    const date = evt.timestamp?.slice(0, 10);
+    if (!date) continue;
+    if (evt.type === "milestone") {
+      moodByDate.set(date, "excited");
+    } else if (evt.type === "chat" && !moodByDate.has(date)) {
+      moodByDate.set(date, "happy");
+    }
+  }
+  const moodHistory = [...moodByDate.entries()]
+    .map(([date, mood]) => ({ date, mood }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-30);
+
+  // Level history (approximate)
+  const levelChatDates = [...chatDates].sort();
+  const currentLevel = affinity?.level ?? 0;
+  const levelHistory: { date: string; level: number }[] = [];
+  if (levelChatDates.length > 0) {
+    const levelPerDay = levelChatDates.length > 1 ? currentLevel / levelChatDates.length : currentLevel;
+    for (let i = 0; i < levelChatDates.length; i++) {
+      const approxLevel = Math.min(Math.round(levelPerDay * (i + 1) * 10) / 10, 100);
+      levelHistory.push({ date: levelChatDates[i], level: approxLevel });
+    }
+    if (levelHistory.length > 0) {
+      levelHistory[levelHistory.length - 1].level = currentLevel;
+    }
+    // Keep last 30 entries
+    levelHistory.splice(0, Math.max(0, levelHistory.length - 30));
+  } else if (currentLevel > 0) {
+    levelHistory.push({ date: new Date().toISOString().slice(0, 10), level: currentLevel });
+  }
+
+  return {
+    totalMessages,
+    totalDays,
+    avgMessagesPerDay,
+    longestStreak,
+    currentStreak,
+    favoriteTopics,
+    activeHours,
+    weekdayActivity,
+    moodHistory,
+    levelHistory,
+  };
+}
+
+/** GET /api/stats */
+function handleGetStats(res: http.ServerResponse): void {
+  try {
+    const stats = calculateStats();
+    sendJson(res, 200, { charName: CHAR_NAME, stats });
+  } catch (e) {
+    sendJson(res, 500, { error: "Failed to calculate stats" });
+  }
+}
+
 // ---------- Health Check ----------
 
 interface ServiceStatus {
@@ -721,6 +1015,8 @@ const server = http.createServer(async (req, res) => {
       await handlePutNotificationSettings(req, res);
     } else if (pathname === "/api/health" && method === "GET") {
       await handleGetHealth(res);
+    } else if (pathname === "/api/stats" && method === "GET") {
+      handleGetStats(res);
     } else if (!pathname.startsWith("/api/")) {
       // Static files
       serveStatic(res, pathname);

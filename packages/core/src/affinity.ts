@@ -6,6 +6,8 @@ import {
   renameSync,
 } from "fs";
 import { logError } from "./logger.js";
+import { fetchWeather, getCurrentWeatherMood } from "./weather.js";
+import type { WeatherMoodEffect } from "./weather.js";
 
 export type Mood =
   | "neutral"
@@ -105,12 +107,53 @@ export class AffinityManager {
   /** Track how many interactions have been counted today */
   private todayInteractionCount: number = 0;
   private todayDate: string = "";
+  /** Cached weather mood effect (refreshed externally) */
+  private weatherEffect: WeatherMoodEffect | null = null;
+  private weatherApiKey: string | undefined;
+  private weatherCity: string;
+  private weatherLastFetched: number = 0;
+  private static readonly WEATHER_CACHE_MS = 30 * 60 * 1000; // 30 minutes
 
-  constructor(stateDir: string, charName: string) {
+  constructor(stateDir: string, charName: string, options?: { weatherApiKey?: string; weatherCity?: string }) {
     this.filePath = `${stateDir}/${charName}-affinity.json`;
     this.state = createDefaultState();
+    this.weatherApiKey = options?.weatherApiKey;
+    this.weatherCity = options?.weatherCity ?? "Tokyo";
     this.load();
     this.initDailyCounter();
+  }
+
+  /**
+   * Fetch weather and update the cached weather mood effect.
+   * Safe to call frequently — caches for 30 minutes.
+   * Failures are silently ignored.
+   */
+  async refreshWeather(): Promise<void> {
+    if (!this.weatherApiKey) return;
+    const now = Date.now();
+    if (now - this.weatherLastFetched < AffinityManager.WEATHER_CACHE_MS) return;
+
+    try {
+      const weather = await fetchWeather(this.weatherApiKey, this.weatherCity);
+      this.weatherEffect = getCurrentWeatherMood(weather);
+      this.weatherLastFetched = now;
+    } catch {
+      // Weather fetch failed — keep previous cache or null
+    }
+  }
+
+  /**
+   * Set the weather effect directly (for external callers that already have weather data).
+   */
+  setWeatherEffect(effect: WeatherMoodEffect | null): void {
+    this.weatherEffect = effect;
+  }
+
+  /**
+   * Get the current weather mood effect (if available).
+   */
+  getWeatherEffect(): WeatherMoodEffect | null {
+    return this.weatherEffect;
   }
 
   // ---------- Persistence ----------
@@ -237,7 +280,7 @@ export class AffinityManager {
       this.state.mood = "excited";
       this.state.moodUpdatedAt = now;
     } else {
-      this.updateMood(now);
+      this.updateMood(now, this.weatherEffect);
     }
 
     this.save();
@@ -269,7 +312,7 @@ export class AffinityManager {
   getState(): AffinityState {
     // Refresh mood before returning
     this.checkDecay();
-    this.updateMood(new Date().toISOString());
+    this.updateMood(new Date().toISOString(), this.weatherEffect);
     return { ...this.state };
   }
 
@@ -278,9 +321,12 @@ export class AffinityManager {
    */
   getMoodContext(): string {
     this.checkDecay();
-    this.updateMood(new Date().toISOString());
+    this.updateMood(new Date().toISOString(), this.weatherEffect);
 
     const moodLabel = MOOD_LABELS[this.state.mood] || this.state.mood;
+    const weatherComment = this.weatherEffect?.comment
+      ? `（天気: ${this.weatherEffect.comment}）`
+      : "";
     const streakText =
       this.state.streak > 0 ? `${this.state.streak}日連続会話中` : "";
     const parts = [
@@ -288,7 +334,7 @@ export class AffinityManager {
       streakText,
     ].filter(Boolean);
 
-    return `【現在のあなたの気分】${moodLabel}（${parts.join("、")}）`;
+    return `【現在のあなたの気分】${moodLabel}${weatherComment}（${parts.join("、")}）`;
   }
 
   /**
@@ -307,7 +353,7 @@ export class AffinityManager {
    */
   applyDecayAndSave(): AffinityState {
     this.checkDecay();
-    this.updateMood(new Date().toISOString());
+    this.updateMood(new Date().toISOString(), this.weatherEffect);
     this.save();
     return { ...this.state };
   }
@@ -346,7 +392,7 @@ export class AffinityManager {
     }
   }
 
-  private updateMood(nowIso: string): void {
+  private updateMood(nowIso: string, weatherEffect?: WeatherMoodEffect | null): void {
     // 3+ days no interaction -> lonely
     if (this.state.lastInteraction) {
       const daysGap = daysBetween(
@@ -374,20 +420,36 @@ export class AffinityManager {
     const hour = new Date(nowIso).getHours();
     const highAffinity = this.state.level >= 50;
 
+    // Base mood from time of day
+    let baseMood: Mood;
     if (hour >= 23 || hour < 6) {
       // 深夜
-      this.state.mood = "tired";
+      baseMood = "tired";
     } else if (hour >= 6 && hour < 10) {
       // 朝
-      this.state.mood = highAffinity ? "happy" : "curious";
+      baseMood = highAffinity ? "happy" : "curious";
     } else if (hour >= 10 && hour < 18) {
       // 昼
-      this.state.mood = highAffinity ? "happy" : "neutral";
+      baseMood = highAffinity ? "happy" : "neutral";
     } else {
       // 夜 (18-23)
-      this.state.mood = highAffinity ? "neutral" : "tired";
+      baseMood = highAffinity ? "neutral" : "tired";
     }
 
+    // Apply weather influence (weather can override base mood)
+    if (weatherEffect?.moodBoost) {
+      const targetMood = weatherEffect.moodBoost.mood as Mood;
+      // Weather boost applies with some probability based on weight
+      // If weather mood matches a valid Mood type, apply it
+      if (["happy", "tired", "curious", "neutral", "lonely", "excited"].includes(targetMood)) {
+        // Weather overrides base mood during daytime (6-23), not deep night
+        if (!(hour >= 23 || hour < 6)) {
+          baseMood = targetMood;
+        }
+      }
+    }
+
+    this.state.mood = baseMood;
     this.state.moodUpdatedAt = nowIso;
   }
 

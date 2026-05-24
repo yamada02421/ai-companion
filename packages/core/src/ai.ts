@@ -6,6 +6,7 @@ import type { OpenPetsReaction } from "./openpets.js";
 import { UserMemoryManager } from "./user-memory.js";
 import { AffinityManager } from "./affinity.js";
 import { TimelineManager } from "./timeline.js";
+import { PersonalityEvolution } from "./personality-evolution.js";
 
 export interface Message {
   role: "user" | "assistant";
@@ -58,11 +59,13 @@ export class CompanionAI {
   private userMemory: UserMemoryManager | null = null;
   private affinity: AffinityManager | null = null;
   private timeline: TimelineManager | null = null;
+  private personalityEvolution: PersonalityEvolution;
 
   constructor(character: Character, apiKey?: string, historyPath?: string) {
     this.client = new Anthropic({ apiKey });
     this.character = character;
     this.systemPrompt = buildSystemPrompt(character) + REACTION_INSTRUCTION;
+    this.personalityEvolution = new PersonalityEvolution();
 
     if (historyPath) {
       this.memory = new MemoryManager(historyPath, apiKey);
@@ -81,7 +84,12 @@ export class CompanionAI {
     const memoryContext = this.memory?.getMemoryContext() ?? "";
     const userMemoryContext = this.userMemory?.getMemoryContext() ?? "";
     const affinityContext = this.affinity?.getMoodContext() ?? "";
-    const contextParts = [memoryContext, userMemoryContext, affinityContext]
+
+    // Inject personality evolution prompt based on current affinity level
+    const affinityLevel = this.affinity?.getState().level ?? 0;
+    const evolutionPrompt = this.personalityEvolution.getEvolutionPrompt(affinityLevel);
+
+    const contextParts = [memoryContext, userMemoryContext, affinityContext, evolutionPrompt]
       .filter(Boolean)
       .join("\n\n");
     const fullPrompt = contextParts

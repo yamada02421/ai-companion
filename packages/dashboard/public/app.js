@@ -66,6 +66,7 @@ function switchSection(name) {
     startTimelineAutoRefresh();
   }
   if (name === "news") loadNews();
+  if (name === "stats") loadStats();
   if (name === "characters") loadCharacters();
   if (name === "status") loadStatus();
   if (name === "settings") loadSettings();
@@ -400,6 +401,8 @@ async function loadAffinity(isAutoRefresh = false) {
     }
 
     const a = data.affinity;
+    const evolution = data.evolution;
+
     if (!a) {
       document.getElementById("affinityLevel").textContent = "0";
       document.getElementById("affinityBar").style.width = "0%";
@@ -409,6 +412,7 @@ async function loadAffinity(isAutoRefresh = false) {
       document.getElementById("affinityLastChat").textContent = "なし";
       document.getElementById("affinityMilestones").innerHTML =
         renderEmptyState("\u{2665}", "まだマイルストーンはありません");
+      renderEvolutionStage(evolution);
       return;
     }
 
@@ -428,6 +432,9 @@ async function loadAffinity(isAutoRefresh = false) {
       ? formatTime(a.lastInteraction)
       : "なし";
 
+    // Evolution Stage
+    renderEvolutionStage(evolution);
+
     // Milestones
     const achieved = a.milestones || [];
     const container = document.getElementById("affinityMilestones");
@@ -446,6 +453,77 @@ async function loadAffinity(isAutoRefresh = false) {
   } finally {
     hideSpinner("spinnerAffinity");
   }
+}
+
+function renderEvolutionStage(evolution) {
+  const container = document.getElementById("evolutionStage");
+  if (!container) return;
+
+  if (!evolution) {
+    container.innerHTML = renderEmptyState("\u{1F331}", "進化情報がありません");
+    return;
+  }
+
+  const stageLabels = {
+    "知り合い": "\u{1F465}",
+    "友達": "\u{1F91D}",
+    "親友": "\u{1F496}",
+    "特別": "\u{2728}"
+  };
+  const stageIcon = stageLabels[evolution.currentStage] || "\u{1F465}";
+
+  // All stages for track display
+  const allStages = evolution.allStages || [];
+
+  // Next stage info
+  let nextStageHtml = "";
+  if (evolution.nextStage) {
+    nextStageHtml = `
+      <div class="evolution-next">
+        次のステージ「<strong>${escapeHtml(evolution.nextStage)}</strong>」まであと <strong>${evolution.levelsToNext}</strong> レベル
+      </div>
+    `;
+  } else {
+    nextStageHtml = `<div class="evolution-next evolution-max">最高ステージに到達しています！</div>`;
+  }
+
+  // Stage progression visualization
+  const stagesHtml = allStages.map((s) => {
+    const isCurrent = s.label === evolution.currentStage;
+    const isPassed = s.maxLevel < evolution.minLevel;
+    let cls = "evolution-stage-dot";
+    if (isCurrent) cls += " current";
+    else if (isPassed) cls += " passed";
+    else cls += " locked";
+    return `<div class="${cls}">
+      <span class="evolution-stage-dot-icon">${stageLabels[s.label] || "\u{25CF}"}</span>
+      <span class="evolution-stage-dot-label">${escapeHtml(s.label)}</span>
+      <span class="evolution-stage-dot-range">Lv.${s.minLevel}-${s.maxLevel}</span>
+    </div>`;
+  }).join('<div class="evolution-stage-connector"></div>');
+
+  // Unlocked behaviors
+  const behaviorsHtml = (evolution.unlockedBehaviors || [])
+    .map((b) => `<span class="evolution-behavior-tag">${escapeHtml(b)}</span>`)
+    .join("");
+
+  container.innerHTML = `
+    <div class="evolution-current">
+      <span class="evolution-current-icon">${stageIcon}</span>
+      <span class="evolution-current-label">${escapeHtml(evolution.currentStage)}</span>
+      <span class="evolution-current-range">(Lv.${evolution.minLevel} - ${evolution.maxLevel})</span>
+    </div>
+    ${nextStageHtml}
+    <div class="evolution-stages-track">
+      ${stagesHtml}
+    </div>
+    <div class="evolution-behaviors">
+      <div class="evolution-behaviors-title">解放済み行動</div>
+      <div class="evolution-behaviors-list">
+        ${behaviorsHtml}
+      </div>
+    </div>
+  `;
 }
 
 // ===== News / Curator History =====
@@ -641,6 +719,162 @@ if (timelineDateInput) {
     loadTimeline();
   });
 }
+
+// ===== Stats =====
+async function loadStats() {
+  showSpinner("spinnerStats");
+
+  try {
+    const data = await apiFetch("/api/stats");
+    const s = data.stats;
+
+    if (!s) {
+      document.getElementById("statsTotalMessages").textContent = "0";
+      document.getElementById("statsTotalDays").textContent = "0";
+      document.getElementById("statsAvgPerDay").textContent = "0";
+      document.getElementById("statsLongestStreak").textContent = "0";
+      document.getElementById("statsCurrentStreak").textContent = "0";
+      return;
+    }
+
+    // Basic stats
+    document.getElementById("statsTotalMessages").textContent =
+      String(s.totalMessages || 0);
+    document.getElementById("statsTotalDays").textContent =
+      `${s.totalDays || 0} 日`;
+    document.getElementById("statsAvgPerDay").textContent =
+      `${s.avgMessagesPerDay || 0} 件/日`;
+    document.getElementById("statsLongestStreak").textContent =
+      `${s.longestStreak || 0} 日`;
+    document.getElementById("statsCurrentStreak").textContent =
+      `${s.currentStreak || 0} 日`;
+
+    // Hourly activity bar chart
+    renderHourlyChart(s.activeHours || []);
+
+    // Weekday activity bar chart
+    renderWeekdayChart(s.weekdayActivity || []);
+
+    // Favorite topics
+    renderFavoriteTopics(s.favoriteTopics || []);
+
+    // Level history
+    renderLevelHistory(s.levelHistory || []);
+  } catch (e) {
+    console.error("Failed to load stats:", e);
+  } finally {
+    hideSpinner("spinnerStats");
+  }
+}
+
+function renderHourlyChart(activeHours) {
+  const container = document.getElementById("statsHourlyChart");
+  if (activeHours.length === 0) {
+    container.innerHTML = renderEmptyState("&#128202;", "時間帯データがありません");
+    return;
+  }
+
+  const maxCount = Math.max(...activeHours.map((h) => h.count), 1);
+
+  const bars = activeHours
+    .map((h) => {
+      const heightPct = Math.round((h.count / maxCount) * 100);
+      const label = String(h.hour).padStart(2, "0");
+      return `
+        <div class="stats-bar-col">
+          <div class="stats-bar-value">${h.count || ""}</div>
+          <div class="stats-bar" style="height: ${heightPct}%;" title="${label}時: ${h.count}件"></div>
+          <div class="stats-bar-label">${label}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  container.innerHTML = `<div class="stats-bar-row">${bars}</div>`;
+}
+
+function renderWeekdayChart(weekdayActivity) {
+  const container = document.getElementById("statsWeekdayChart");
+  if (weekdayActivity.length === 0) {
+    container.innerHTML = renderEmptyState("&#128202;", "曜日データがありません");
+    return;
+  }
+
+  const maxCount = Math.max(...weekdayActivity.map((d) => d.count), 1);
+
+  const bars = weekdayActivity
+    .map((d) => {
+      const heightPct = Math.round((d.count / maxCount) * 100);
+      return `
+        <div class="stats-bar-col stats-bar-col-wide">
+          <div class="stats-bar-value">${d.count || ""}</div>
+          <div class="stats-bar" style="height: ${heightPct}%;" title="${d.day}: ${d.count}件"></div>
+          <div class="stats-bar-label">${d.day}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  container.innerHTML = `<div class="stats-bar-row">${bars}</div>`;
+}
+
+function renderFavoriteTopics(topics) {
+  const container = document.getElementById("statsTopics");
+
+  if (topics.length === 0) {
+    container.innerHTML = renderEmptyState("&#128172;", "トピックデータがまだありません");
+    return;
+  }
+
+  const maxCount = Math.max(...topics.map((t) => t.count), 1);
+
+  const items = topics
+    .map((t, i) => {
+      const widthPct = Math.round((t.count / maxCount) * 100);
+      return `
+        <div class="stats-topic-row">
+          <span class="stats-topic-rank">${i + 1}</span>
+          <span class="stats-topic-name">${escapeHtml(t.topic)}</span>
+          <div class="stats-topic-bar-wrap">
+            <div class="stats-topic-bar" style="width: ${widthPct}%;"></div>
+          </div>
+          <span class="stats-topic-count">${t.count}</span>
+        </div>
+      `;
+    })
+    .join("");
+
+  container.innerHTML = items;
+}
+
+function renderLevelHistory(levelHistory) {
+  const container = document.getElementById("statsLevelHistory");
+
+  if (levelHistory.length === 0) {
+    container.innerHTML = renderEmptyState("&#128200;", "好感度データがまだありません");
+    return;
+  }
+
+  const rows = levelHistory
+    .map((entry) => {
+      const barWidth = Math.round(entry.level);
+      const dateLabel = entry.date.slice(5); // MM-DD
+      return `
+        <div class="stats-level-row">
+          <span class="stats-level-date">${escapeHtml(dateLabel)}</span>
+          <div class="stats-level-bar-wrap">
+            <div class="stats-level-bar" style="width: ${barWidth}%;"></div>
+          </div>
+          <span class="stats-level-value">${entry.level}</span>
+        </div>
+      `;
+    })
+    .join("");
+
+  container.innerHTML = `<div class="stats-level-list">${rows}</div>`;
+}
+
+document.getElementById("refreshStats").addEventListener("click", () => loadStats());
 
 // ===== Characters =====
 async function loadCharacters() {

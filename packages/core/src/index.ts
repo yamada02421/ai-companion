@@ -1,6 +1,6 @@
 export { CompanionAI, type Message, type CompanionResponse } from "./ai.js";
 export { loadCharacter, buildSystemPrompt, type Character, type EmotionBias, type PetDisplaySettings } from "./character.js";
-export { fetchWeather, formatWeatherContext, type WeatherInfo } from "./weather.js";
+export { fetchWeather, formatWeatherContext, getCurrentWeatherMood, type WeatherInfo, type WeatherMoodEffect } from "./weather.js";
 export { fetchNews, formatNewsContext, type NewsItem } from "./news.js";
 export { Scheduler, type NotifyType } from "./scheduler.js";
 export { fetchQiitaTrending, formatQiitaContext, type QiitaItem } from "./qiita.js";
@@ -31,6 +31,10 @@ export {
   type AffinityState,
   type Mood,
 } from "./affinity.js";
+export {
+  PersonalityEvolution,
+  type EvolutionStage,
+} from "./personality-evolution.js";
 export { ScreenCapture } from "./screen-capture.js";
 export { ScreenObserver } from "./screen-observer.js";
 export { DataManager, type ExportData } from "./data-manager.js";

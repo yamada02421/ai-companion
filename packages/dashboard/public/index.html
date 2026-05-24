@@ -55,6 +55,12 @@
           </button>
         </li>
         <li>
+          <button class="nav-btn" data-section="stats">
+            <span class="nav-icon">&#128202;</span>
+            <span class="nav-label">統計</span>
+          </button>
+        </li>
+        <li>
           <button class="nav-btn" data-section="characters">
             <span class="nav-icon">&#128101;</span>
             <span class="nav-label">キャラ</span>
@@ -142,6 +148,14 @@
           </div>
         </div>
 
+        <!-- Evolution Stage Card -->
+        <div class="card">
+          <h3>性格進化ステージ</h3>
+          <div id="evolutionStage" class="evolution-stage">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+
         <!-- Milestones Card -->
         <div class="card">
           <h3>マイルストーン</h3>
@@ -193,6 +207,73 @@
         </div>
         <div class="card">
           <div id="newsList" class="news-list">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stats Section -->
+      <section id="section-stats" class="section">
+        <div class="section-header">
+          <h2>会話統計</h2>
+          <div class="section-header-actions">
+            <span class="spinner" id="spinnerStats"></span>
+            <button class="btn btn-secondary" id="refreshStats">更新</button>
+          </div>
+        </div>
+
+        <!-- Basic Stats Cards -->
+        <div class="stats-summary-grid">
+          <div class="stats-summary-card">
+            <div class="stats-summary-label">総メッセージ数</div>
+            <div class="stats-summary-value" id="statsTotalMessages">--</div>
+          </div>
+          <div class="stats-summary-card">
+            <div class="stats-summary-label">会話日数</div>
+            <div class="stats-summary-value" id="statsTotalDays">--</div>
+          </div>
+          <div class="stats-summary-card">
+            <div class="stats-summary-label">1日平均</div>
+            <div class="stats-summary-value" id="statsAvgPerDay">--</div>
+          </div>
+          <div class="stats-summary-card">
+            <div class="stats-summary-label">最長連続日数</div>
+            <div class="stats-summary-value" id="statsLongestStreak">--</div>
+          </div>
+          <div class="stats-summary-card">
+            <div class="stats-summary-label">現在の連続日数</div>
+            <div class="stats-summary-value" id="statsCurrentStreak">--</div>
+          </div>
+        </div>
+
+        <!-- Hourly Activity Chart -->
+        <div class="card">
+          <h3>時間帯別アクティビティ</h3>
+          <div class="stats-bar-chart" id="statsHourlyChart">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+
+        <!-- Weekday Activity Chart -->
+        <div class="card">
+          <h3>曜日別アクティビティ</h3>
+          <div class="stats-bar-chart stats-weekday-chart" id="statsWeekdayChart">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+
+        <!-- Favorite Topics -->
+        <div class="card">
+          <h3>よく話すトピック TOP5</h3>
+          <div id="statsTopics">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+
+        <!-- Level History -->
+        <div class="card">
+          <h3>好感度推移</h3>
+          <div id="statsLevelHistory">
             <p class="placeholder">読み込み中...</p>
           </div>
         </div>

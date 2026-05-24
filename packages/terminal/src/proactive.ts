@@ -10,6 +10,9 @@ import {
   formatNewsContext,
   fetchQiitaTrending,
   formatQiitaContext,
+  fetchWeather,
+  getCurrentWeatherMood,
+  formatWeatherContext,
   ContentCache,
   OpenPetsClient,
   UnifiedVoiceSynthesizer,
@@ -188,6 +191,36 @@ function getCasualContext(): string {
   return "ユーザーが作業中です。短く自然に声をかけてください。";
 }
 
+// --- 天気コンテキスト取得 ---
+async function getWeatherContext(): Promise<string> {
+  const apiKey = process.env.OPENWEATHERMAP_API_KEY;
+  if (!apiKey) return "";
+
+  try {
+    const weather = await fetchWeather(apiKey, process.env.WEATHER_CITY ?? "Tokyo");
+    const moodEffect = getCurrentWeatherMood(weather);
+    const weatherDesc = formatWeatherContext(weather);
+
+    const hints: string[] = [weatherDesc];
+    if (moodEffect.comment) {
+      hints.push(`天気の気分: ${moodEffect.comment}`);
+    }
+
+    // Weather-specific conversation hints
+    if (weather.willRain) {
+      hints.push("「雨だと家にこもりたくなるよね」のように天気に触れた一言を。");
+    } else if (weather.mainCondition === "Clear") {
+      hints.push("「今日は天気いいね」のように天気に軽く触れても良い。");
+    } else if (weather.mainCondition === "Snow") {
+      hints.push("「雪だ…外は真っ白かな」のように天気に触れた一言を。");
+    }
+
+    return hints.join("\n");
+  } catch {
+    return "";
+  }
+}
+
 async function run() {
   const selected = pickMode();
   let context = "";
@@ -280,7 +313,11 @@ async function run() {
       break;
     }
     case "casual": {
-      context = getCasualContext();
+      const weatherCtx = await getWeatherContext();
+      const casualBase = getCasualContext();
+      context = weatherCtx
+        ? `${casualBase}\n\n【天気情報】\n${weatherCtx}`
+        : casualBase;
       reaction = "waving";
       break;
     }

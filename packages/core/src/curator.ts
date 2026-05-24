@@ -169,9 +169,10 @@ ${listing}
 
   /**
    * Main entry: curate one article. Returns null if throttled or no new articles.
+   * @param options.force - If true, bypass the frequency throttle check.
    */
-  async curate(): Promise<CuratedArticle | null> {
-    if (!this.canNotify()) return null;
+  async curate(options?: { force?: boolean }): Promise<CuratedArticle | null> {
+    if (!options?.force && !this.canNotify()) return null;
 
     const articles = await this.fetchAllArticles();
     if (articles.length === 0) return null;
