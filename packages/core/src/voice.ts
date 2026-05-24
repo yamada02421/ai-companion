@@ -1,8 +1,6 @@
 import { writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from "fs";
 import { join } from "path";
 import { exec } from "child_process";
-import { VoiceConverter, type RVCConfig } from "./rvc.js";
-
 const DEFAULT_HOST = "http://127.0.0.1:10101";
 
 export interface VoiceConfig {
@@ -11,7 +9,6 @@ export interface VoiceConfig {
   speedScale?: number;
   pitchScale?: number;
   volumeScale?: number;
-  rvc?: RVCConfig;
 }
 
 export class VoiceSynthesizer {
@@ -20,17 +17,12 @@ export class VoiceSynthesizer {
   private speedScale: number;
   private pitchScale: number;
   private volumeScale: number;
-  private rvc: VoiceConverter | null = null;
-
   constructor(config: VoiceConfig = {}) {
     this.host = config.host ?? DEFAULT_HOST;
     this.speakerId = config.speakerId ?? 0;
     this.speedScale = config.speedScale ?? 1.0;
     this.pitchScale = config.pitchScale ?? 0.0;
     this.volumeScale = config.volumeScale ?? 1.0;
-    if (config.rvc) {
-      this.rvc = new VoiceConverter(config.rvc);
-    }
   }
 
   async isAvailable(): Promise<boolean> {
@@ -95,11 +87,7 @@ export class VoiceSynthesizer {
 
   async speak(text: string, outputDir: string): Promise<void> {
     this.cleanOldFiles(outputDir);
-    let filePath = await this.speakToFile(text, outputDir);
-    if (this.rvc?.isAvailable()) {
-      const converted = await this.rvc.convert(filePath, outputDir);
-      if (converted !== filePath) filePath = converted;
-    }
+    const filePath = await this.speakToFile(text, outputDir);
     await playAudio(filePath);
   }
 

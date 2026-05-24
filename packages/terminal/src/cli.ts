@@ -34,9 +34,6 @@ const voice = new VoiceSynthesizer({
   speedScale: character.voice?.speed,
   pitchScale: character.voice?.pitch,
   volumeScale: character.voice?.volume,
-  rvc: character.voice?.rvc?.model_name
-    ? { modelName: character.voice.rvc.model_name, pitch: character.voice.rvc.pitch, projectRoot: resolve(__dirname, "../../..") }
-    : undefined,
 });
 
 const message = process.argv.slice(2).join(" ");

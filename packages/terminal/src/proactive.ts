@@ -62,9 +62,6 @@ const voice = new VoiceSynthesizer({
   speedScale: character.voice?.speed,
   pitchScale: character.voice?.pitch,
   volumeScale: character.voice?.volume,
-  rvc: character.voice?.rvc?.model_name
-    ? { modelName: character.voice.rvc.model_name, pitch: character.voice.rvc.pitch, projectRoot: ROOT }
-    : undefined,
 });
 
 const CACHE_30MIN = 30 * 60 * 1000;
