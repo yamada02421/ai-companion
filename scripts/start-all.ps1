@@ -6,12 +6,17 @@
     音声会話はフォアグラウンドで実行し、Ctrl+C で全体を停止する。
 .PARAMETER vad
     音声入力を VAD モードで起動する（デフォルトは PTT モード）
+.PARAMETER fishSpeech
+    Fish Speech S2-Pro サーバーもバックグラウンドで起動する
 .EXAMPLE
     pwsh -NoProfile -File scripts/start-all.ps1
     pwsh -NoProfile -File scripts/start-all.ps1 -vad
+    pwsh -NoProfile -File scripts/start-all.ps1 -fishSpeech
+    pwsh -NoProfile -File scripts/start-all.ps1 -vad -fishSpeech
 #>
 param(
-    [switch]$vad
+    [switch]$vad,
+    [switch]$fishSpeech
 )
 
 Set-StrictMode -Version Latest
@@ -81,6 +86,24 @@ Write-Host ""
 Write-Host "  ╔══════════════════════════════════════╗" -ForegroundColor Magenta
 Write-Host "  ║     AI Companion — 一括起動          ║" -ForegroundColor Magenta
 Write-Host "  ╚══════════════════════════════════════╝" -ForegroundColor Magenta
+Write-Host ""
+
+# --- ヘルスチェック (Doctor) ---
+Write-Status "🏥" "システム診断を実行中..."
+Write-Host ""
+$doctorResult = & npx tsx "$ProjectRoot/scripts/doctor.ts" 2>&1
+$doctorExitCode = $LASTEXITCODE
+
+# Doctor の出力を表示
+foreach ($line in $doctorResult) {
+    Write-Host $line
+}
+
+if ($doctorExitCode -ne 0) {
+    Write-Host ""
+    Write-Err "システム診断でエラーが検出されました。上記の問題を修正してから再実行してください。"
+    exit 1
+}
 Write-Host ""
 
 # --- .state ディレクトリ確保 ---
@@ -160,6 +183,31 @@ try {
 } catch {
     Write-Err "スケジューラ起動失敗: $_"
     # 致命的ではないので続行
+}
+
+# --- 4. Fish Speech サーバー起動 (オプション) ---
+if ($fishSpeech) {
+    Write-Status "▶" "Fish Speech S2-Pro サーバー起動中..."
+    $fishConfigPath = Join-Path $ProjectRoot ".state" "fish-speech.json"
+    if (-not (Test-Path $fishConfigPath)) {
+        Write-Err "Fish Speech が未セットアップです。先に実行: npm run fish-speech:setup"
+    } else {
+        try {
+            $fishProc = Start-Process -FilePath "pwsh" `
+                -ArgumentList "-NoProfile", "-File", (Join-Path $ProjectRoot "scripts" "start-fish-speech.ps1") `
+                -WorkingDirectory $ProjectRoot `
+                -WindowStyle Hidden `
+                -PassThru `
+                -RedirectStandardOutput (Join-Path $StateDir "fish-speech.log") `
+                -RedirectStandardError  (Join-Path $StateDir "fish-speech.err.log")
+
+            $pids["fish_speech"] = $fishProc.Id
+            Write-Ok "Fish Speech サーバー起動完了 (PID: $($fishProc.Id))"
+        } catch {
+            Write-Err "Fish Speech 起動失敗: $_"
+            # 致命的ではないので続行
+        }
+    }
 }
 
 # --- PID ファイル保存 ---
