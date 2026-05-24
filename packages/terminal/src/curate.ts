@@ -9,6 +9,7 @@ import {
   UnifiedVoiceSynthesizer,
   NewsCurator,
   setLogDir,
+  TimelineManager,
 } from "@ai-companion/core";
 import type { VoiceEngine } from "@ai-companion/core";
 
@@ -48,6 +49,8 @@ const voice = new UnifiedVoiceSynthesizer({
     : undefined,
 });
 
+const timeline = new TimelineManager(stateDir, charName);
+
 async function run() {
   const curator = new NewsCurator(stateDir);
 
@@ -72,6 +75,9 @@ async function run() {
   console.log(`   ${text}`);
   console.log(`   🔗 ${article.url}`);
   console.log(`   💡 ${article.reason}\n`);
+
+  // Record curate event on the timeline
+  timeline.addEvent("curate", article.title, `${text}\n\nSource: ${article.source}\nURL: ${article.url}`);
 
   // OpenPets notification + voice in parallel
   await Promise.all([

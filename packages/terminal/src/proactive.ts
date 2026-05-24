@@ -16,6 +16,7 @@ import {
   NewsCurator,
   ScreenCapture,
   ScreenObserver,
+  TimelineManager,
 } from "@ai-companion/core";
 import type { VoiceEngine } from "@ai-companion/core";
 
@@ -78,6 +79,8 @@ const voice = new UnifiedVoiceSynthesizer({
       }
     : undefined,
 });
+
+const timeline = new TimelineManager(stateDir, charName);
 
 const CACHE_30MIN = 30 * 60 * 1000;
 const CACHE_1HOUR = 60 * 60 * 1000;
@@ -286,6 +289,13 @@ async function run() {
   const { text, reaction: aiReaction } = await ai.proactiveMessage(context);
   const label = { news: "📰", qiita: "📝", work: "💻", casual: "💬", curate: "🗞️", observe: "👀" }[selected];
   console.log(`\n${label} ${character.display_name}: ${text}`);
+
+  // Record timeline event based on mode
+  const timelineType = selected === "curate" ? "curate"
+    : selected === "observe" ? "observe"
+    : "proactive";
+  const timelineSummary = text.length > 80 ? text.slice(0, 80) + "..." : text;
+  timeline.addEvent(timelineType, `[${selected}] ${timelineSummary}`, text);
 
   // ステート保存
   try { mkdirSync(stateDir, { recursive: true }); } catch {}
