@@ -5,6 +5,7 @@ import { MemoryManager } from "./memory.js";
 import type { OpenPetsReaction } from "./openpets.js";
 import { UserMemoryManager } from "./user-memory.js";
 import { AffinityManager } from "./affinity.js";
+import { TimelineManager } from "./timeline.js";
 
 export interface Message {
   role: "user" | "assistant";
@@ -33,15 +34,21 @@ const REACTION_INSTRUCTION = `
 必ず以下のJSON形式で応答してください。他の形式は使わないでください。
 {"text": "あなたの応答テキスト", "reaction": "感情"}
 
-reactionは以下から1つ選んでください:
-- idle: 普通、特に感情なし
-- thinking: 考えている、興味深い
-- working: 作業に関する話題
-- waving: 挨拶、お疲れ様
-- success: うまくいった、良いニュース
-- celebrating: すごい、おめでとう
-- error: エラー、失敗、残念
-- waiting: 待っている`;
+reactionは以下から1つ選んでください（会話の内容と自分の気持ちに合ったものを選ぶ）:
+- idle: 普通の会話、特に感情が動かない時
+- thinking: 考え込んだ時、興味を引かれた時、「へぇ」「なるほど」と思った時
+- working: 相手が作業・仕事の話をしている時
+- waving: 挨拶、お出迎え、「おかえり」「おはよ」の場面
+- success: 良い報告を聞いた時、何かうまくいった時
+- celebrating: 本当にすごいこと、お祝い事（めったに使わない）
+- error: 失敗・ミス・残念な話を聞いた時
+- waiting: 相手の返事を待っている時、話の続きが気になる時
+
+reactionの選び方の注意:
+- 前回の会話と同じreactionを連続で選ばないようにする
+- celebratingは本当に特別な時だけ使う（日常会話では使わない）
+- 迷ったらthinkingかidleを選ぶ
+- 相手の感情に寄り添ったreactionを選ぶ（相手が落ち込んでいたらerrorではなくthinking等）`;
 
 export class CompanionAI {
   private client: Anthropic;
@@ -50,6 +57,7 @@ export class CompanionAI {
   private memory: MemoryManager | null = null;
   private userMemory: UserMemoryManager | null = null;
   private affinity: AffinityManager | null = null;
+  private timeline: TimelineManager | null = null;
 
   constructor(character: Character, apiKey?: string, historyPath?: string) {
     this.client = new Anthropic({ apiKey });
@@ -65,6 +73,7 @@ export class CompanionAI {
         stateDir,
       );
       this.affinity = new AffinityManager(stateDir, character.name);
+      this.timeline = new TimelineManager(stateDir, character.name);
     }
   }
 
@@ -130,7 +139,18 @@ export class CompanionAI {
         .map((m) => MILESTONE_LABELS[m] ?? m)
         .join("、");
       result.text += `\n\n[${milestoneText}]`;
+
+      // Record milestone events on the timeline
+      for (const m of newMilestones) {
+        this.timeline?.addEvent("milestone", MILESTONE_LABELS[m] ?? m);
+      }
     }
+
+    // Record chat event on the timeline
+    const chatSummary = result.text.length > 80
+      ? result.text.slice(0, 80) + "..."
+      : result.text;
+    this.timeline?.addEvent("chat", chatSummary, result.text);
 
     this.memory?.addMessage({ role: "assistant", content: result.text });
     await this.memory?.compactIfNeeded();
@@ -188,5 +208,9 @@ export class CompanionAI {
 
   getAffinityManager(): AffinityManager | null {
     return this.affinity;
+  }
+
+  getTimelineManager(): TimelineManager | null {
+    return this.timeline;
   }
 }
