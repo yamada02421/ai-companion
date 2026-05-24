@@ -4,11 +4,16 @@
 
 ## 次にやること（未着手）
 
-### v0.6 — 改善・拡張候補（優先順に）
-- [ ] Fish Speech S2 でTTS置き換え（ストリーミング＋感情制御）
-- [ ] Mem0 で会話記憶を強化（現行の要約ベースから移行）
-- [ ] ニュースキュレーション機能（RSS巡回 → AIフィルタ → 一言紹介＋リンク提示）
-- [ ] Live2D 化の検討（ViviPet or Open-LLM-VTuber or カスタム Electron）
+### v0.6 — 実装済み ✅（2026-05-24）
+- [x] UserMemoryManager — 会話からユーザー情報を自動学習・永続保存（動作確認済み）
+- [x] NewsCurator — 6RSSフィード巡回 → AI厳選 → 一言紹介＋リンク提示
+- [x] Web ダッシュボード — 会話ログ / ユーザー記憶 / キャラ設定（localhost:3456）
+- [x] proactive.ts に curate モード統合
+- [x] Stop Hook 開発モード（短い完了通知のみ）
+
+### v0.7 — 次の改善候補（優先順に）
+- [ ] Fish Speech S2 でTTS置き換え（ストリーミング＋感情制御）— SPEC作成中
+- [ ] Live2D 化（ViviPet or Open-LLM-VTuber）— SPEC作成中
 - [ ] プロアクティブ会話＋画面認識
 - [ ] 好感度システム
 - [ ] VAD（音声検出）でハンズフリー化

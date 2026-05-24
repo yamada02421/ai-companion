@@ -48,6 +48,16 @@ function readYamlFile(filePath: string): unknown {
   }
 }
 
+/** Read a YAML file as a Document to preserve formatting on round-trip */
+function readYamlDocument(filePath: string): YAML.Document | null {
+  try {
+    const raw = fs.readFileSync(filePath, "utf-8");
+    return YAML.parseDocument(raw);
+  } catch {
+    return null;
+  }
+}
+
 /** Parse JSON body from request */
 function parseBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -182,27 +192,30 @@ async function handlePutSettings(
     const body = await parseBody(req);
     const updates = JSON.parse(body) as Record<string, unknown>;
 
-    // Read current YAML
-    const current = readYamlFile(yamlPath) as Record<string, unknown>;
-    if (!current) {
+    // Read current YAML as Document to preserve formatting (quotes, comments, etc.)
+    const doc = readYamlDocument(yamlPath);
+    if (!doc) {
       sendJson(res, 500, { error: "Failed to read current settings" });
       return;
     }
 
-    // Apply updates (shallow merge with special handling for voice)
-    if (updates.voice && typeof updates.voice === "object" && current.voice && typeof current.voice === "object") {
-      current.voice = { ...(current.voice as Record<string, unknown>), ...(updates.voice as Record<string, unknown>) };
+    // Apply updates using Document API for format-preserving round-trip
+    if (updates.voice && typeof updates.voice === "object") {
+      const voiceUpdates = updates.voice as Record<string, unknown>;
+      for (const [k, v] of Object.entries(voiceUpdates)) {
+        doc.setIn(["voice", k], v);
+      }
     }
     // Merge other top-level keys
     for (const key of Object.keys(updates)) {
       if (key !== "voice") {
-        current[key] = updates[key];
+        doc.set(key, updates[key]);
       }
     }
 
-    const yamlStr = YAML.stringify(current, { lineWidth: 0 });
-    fs.writeFileSync(yamlPath, yamlStr, "utf-8");
-    sendJson(res, 200, { success: true, settings: current });
+    fs.writeFileSync(yamlPath, doc.toString(), "utf-8");
+    const result = doc.toJSON() as Record<string, unknown>;
+    sendJson(res, 200, { success: true, settings: result });
   } catch (e) {
     sendJson(res, 400, { error: "Invalid request body" });
   }
