@@ -219,6 +219,68 @@ if (historySearchInput) {
   });
 }
 
+// ===== Chat Input =====
+const chatInput = document.getElementById("chatInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+const chatTyping = document.getElementById("chatTyping");
+
+let chatSending = false;
+
+async function sendChatMessage() {
+  if (chatSending) return;
+
+  const message = chatInput.value.trim();
+  if (!message) return;
+
+  chatSending = true;
+  chatInput.disabled = true;
+  chatSendBtn.disabled = true;
+  chatTyping.classList.add("active");
+
+  // Immediately add user message to the display
+  const userMsg = { role: "user", content: message, timestamp: new Date().toISOString() };
+  historyData.push(userMsg);
+  renderHistoryFiltered("");
+
+  // Clear input
+  chatInput.value = "";
+
+  try {
+    const data = await apiFetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+
+    // Add assistant response to display
+    const assistantMsg = { role: "assistant", content: data.text, timestamp: new Date().toISOString() };
+    historyData.push(assistantMsg);
+    renderHistoryFiltered("");
+  } catch (e) {
+    // Show error as a system message
+    const errorMsg = { role: "assistant", content: "[エラー] 応答の取得に失敗しました: " + e.message, timestamp: new Date().toISOString() };
+    historyData.push(errorMsg);
+    renderHistoryFiltered("");
+  } finally {
+    chatSending = false;
+    chatInput.disabled = false;
+    chatSendBtn.disabled = false;
+    chatTyping.classList.remove("active");
+    chatInput.focus();
+  }
+}
+
+// Send on button click
+chatSendBtn.addEventListener("click", sendChatMessage);
+
+// Send on Enter key
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+});
+
 // ===== Memory =====
 async function loadMemory(isAutoRefresh = false) {
   const container = document.getElementById("memoryContent");
@@ -1276,6 +1338,44 @@ document.getElementById("exportData").addEventListener("click", async () => {
     setTimeout(() => statusEl.classList.remove("show"), 2500);
   } catch (e) {
     statusEl.textContent = "エクスポートに失敗しました";
+    statusEl.style.color = "var(--danger)";
+    statusEl.classList.add("show");
+    setTimeout(() => {
+      statusEl.classList.remove("show");
+      statusEl.style.color = "";
+    }, 3000);
+  }
+});
+
+document.getElementById("exportMarkdown").addEventListener("click", async () => {
+  const statusEl = document.getElementById("dataMgmtStatus");
+  try {
+    const res = await fetch("/api/export/markdown");
+    if (!res.ok) throw new Error("Markdown export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    // Extract filename from Content-Disposition header, or use fallback
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch
+      ? filenameMatch[1]
+      : `companion-conversation-${new Date().toISOString().slice(0, 10)}.md`;
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    statusEl.textContent = "Markdownエクスポートしました";
+    statusEl.style.color = "var(--success)";
+    statusEl.classList.add("show");
+    setTimeout(() => statusEl.classList.remove("show"), 2500);
+  } catch (e) {
+    statusEl.textContent = "Markdownエクスポートに失敗しました";
     statusEl.style.color = "var(--danger)";
     statusEl.classList.add("show");
     setTimeout(() => {

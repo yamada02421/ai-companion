@@ -4,6 +4,7 @@ import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
+import { CompanionAI, loadCharacter } from "@ai-companion/core";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -221,6 +222,51 @@ function readNotificationSettings(): NotificationSettings {
 function writeNotificationSettings(settings: NotificationSettings): void {
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); } catch {}
   fs.writeFileSync(NOTIFICATION_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+}
+
+// ---------- CompanionAI Chat Instance ----------
+
+/** Lazily initialized CompanionAI instance (recreated when character switches) */
+let companionAI: CompanionAI | null = null;
+let companionCharName: string | null = null;
+
+function getCompanionAI(): CompanionAI {
+  if (companionAI && companionCharName === CHAR_NAME) {
+    return companionAI;
+  }
+
+  const yamlPath = path.join(CHARACTERS_DIR, `${CHAR_NAME}.yaml`);
+  const character = loadCharacter(yamlPath);
+  const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
+
+  companionAI = new CompanionAI(character, undefined, historyPath);
+  companionCharName = CHAR_NAME;
+  return companionAI;
+}
+
+/** POST /api/chat */
+async function handlePostChat(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  try {
+    const body = await parseBody(req);
+    const { message } = JSON.parse(body) as { message?: string };
+
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      sendJson(res, 400, { error: "Missing 'message' field" });
+      return;
+    }
+
+    const ai = getCompanionAI();
+    const response = await ai.chat(message.trim());
+
+    sendJson(res, 200, { text: response.text, reaction: response.reaction });
+  } catch (e) {
+    console.error("Chat error:", e);
+    const msg = e instanceof Error ? e.message : "Chat failed";
+    sendJson(res, 500, { error: msg });
+  }
 }
 
 // ---------- Personality Evolution (inline to avoid cross-package dependency) ----------
@@ -548,6 +594,114 @@ function handleExport(res: http.ServerResponse): void {
     res.end(json);
   } catch (e) {
     sendJson(res, 500, { error: "Export failed" });
+  }
+}
+
+/** GET /api/export/markdown */
+function handleExportMarkdown(res: http.ServerResponse): void {
+  try {
+    const historyPath = path.join(STATE_DIR, `${CHAR_NAME}-history.json`);
+    const userMemoryPath = path.join(STATE_DIR, `${CHAR_NAME}-user-memory.json`);
+    const affinityPath = path.join(STATE_DIR, `${CHAR_NAME}-affinity.json`);
+
+    const history = (readJsonFile(historyPath) as Array<{ role: string; content: string; timestamp?: string }>) ?? [];
+    const userMemoryRaw = readJsonFile(userMemoryPath) as Record<string, unknown> | null;
+    let userMemory: Array<{ content: string; category: string; confidence: number }> = [];
+    if (Array.isArray(userMemoryRaw)) {
+      userMemory = userMemoryRaw as typeof userMemory;
+    } else if (userMemoryRaw && Array.isArray(userMemoryRaw.facts)) {
+      userMemory = userMemoryRaw.facts as typeof userMemory;
+    }
+    const affinity = readJsonFile(affinityPath) as { level?: number; streak?: number } | null;
+
+    const now = new Date();
+    const exportDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    // Determine affinity stage label
+    const level = affinity?.level ?? 0;
+    let stageLabel = "知り合い";
+    if (level >= 81) stageLabel = "特別";
+    else if (level >= 51) stageLabel = "親友";
+    else if (level >= 21) stageLabel = "友達";
+
+    const lines: string[] = [];
+
+    // Header
+    lines.push(`# ${CHAR_NAME}との会話ログ`);
+    lines.push("");
+    lines.push(`エクスポート日時: ${exportDate}`);
+    lines.push("");
+
+    // Stats
+    lines.push("## 統計");
+    lines.push(`- 総会話数: ${history.length}`);
+    lines.push(`- 好感度: Lv.${Math.floor(level)} (${stageLabel})`);
+    lines.push(`- 連続日数: ${affinity?.streak ?? 0}日`);
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+
+    // Conversation history grouped by date
+    lines.push("## 会話履歴");
+    lines.push("");
+
+    if (history.length === 0) {
+      lines.push("会話履歴はありません。");
+      lines.push("");
+    } else {
+      // Group messages by date
+      const grouped = new Map<string, typeof history>();
+      for (const msg of history) {
+        let dateKey: string;
+        if (msg.timestamp) {
+          dateKey = msg.timestamp.slice(0, 10);
+        } else {
+          dateKey = "日付不明";
+        }
+        if (!grouped.has(dateKey)) {
+          grouped.set(dateKey, []);
+        }
+        grouped.get(dateKey)!.push(msg);
+      }
+
+      for (const [date, messages] of grouped) {
+        lines.push(`### ${date}`);
+        lines.push("");
+        for (const msg of messages) {
+          const speaker = msg.role === "user" ? "あなた" : CHAR_NAME;
+          const content = msg.content.length > 500
+            ? msg.content.slice(0, 500) + "..."
+            : msg.content;
+          lines.push(`**${speaker}**: ${content}`);
+          lines.push("");
+        }
+      }
+    }
+
+    lines.push("---");
+    lines.push("");
+
+    // User memory facts
+    lines.push("### ユーザーについて学んだこと");
+    if (userMemory.length === 0) {
+      lines.push("まだ学んだことはありません。");
+    } else {
+      for (const fact of userMemory) {
+        lines.push(`- ${fact.content} (${fact.category}, 信頼度: ${fact.confidence})`);
+      }
+    }
+    lines.push("");
+
+    const markdown = lines.join("\n");
+    const filename = `${CHAR_NAME}-conversation-${now.toISOString().slice(0, 10)}.md`;
+
+    res.writeHead(200, {
+      "Content-Type": "text/markdown; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    });
+    res.end(markdown);
+  } catch (e) {
+    sendJson(res, 500, { error: "Markdown export failed" });
   }
 }
 
@@ -1005,6 +1159,8 @@ const server = http.createServer(async (req, res) => {
       handleGetActiveCharacter(res);
     } else if (pathname === "/api/character/active" && method === "PUT") {
       await handlePutActiveCharacter(req, res);
+    } else if (pathname === "/api/export/markdown" && method === "GET") {
+      handleExportMarkdown(res);
     } else if (pathname === "/api/export" && method === "GET") {
       handleExport(res);
     } else if (pathname === "/api/import" && method === "POST") {
@@ -1017,6 +1173,8 @@ const server = http.createServer(async (req, res) => {
       await handleGetHealth(res);
     } else if (pathname === "/api/stats" && method === "GET") {
       handleGetStats(res);
+    } else if (pathname === "/api/chat" && method === "POST") {
+      await handlePostChat(req, res);
     } else if (!pathname.startsWith("/api/")) {
       // Static files
       serveStatic(res, pathname);

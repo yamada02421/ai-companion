@@ -8,6 +8,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@ai-companion/core": "*",
     "yaml": "^2.0.0"
   },
   "devDependencies": {
