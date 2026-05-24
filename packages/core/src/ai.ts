@@ -121,6 +121,69 @@ export class CompanionAI {
     return { text: raw, reaction: "idle" };
   }
 
+  async *streamChat(
+    userMessage: string,
+  ): AsyncGenerator<string, CompanionResponse, unknown> {
+    // Record interaction for affinity tracking
+    this.affinity?.recordInteraction();
+
+    this.memory?.addMessage({ role: "user", content: userMessage });
+
+    const messages = this.memory?.getActiveHistory() ?? [];
+
+    const stream = await this.client.messages.stream({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      system: this.buildSystemMessages(),
+      messages,
+    });
+
+    let fullText = "";
+
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        fullText += event.delta.text;
+        yield event.delta.text;
+      }
+    }
+
+    const result = this.parseResponse(fullText);
+
+    // Append milestone notifications to response if any
+    const newMilestones = this.affinity?.getNewMilestones() ?? [];
+    if (newMilestones.length > 0) {
+      const milestoneText = newMilestones
+        .map((m) => MILESTONE_LABELS[m] ?? m)
+        .join("、");
+      result.text += `\n\n[${milestoneText}]`;
+
+      for (const m of newMilestones) {
+        this.timeline?.addEvent("milestone", MILESTONE_LABELS[m] ?? m);
+      }
+    }
+
+    // Record chat event on the timeline
+    const chatSummary = result.text.length > 80
+      ? result.text.slice(0, 80) + "..."
+      : result.text;
+    this.timeline?.addEvent("chat", chatSummary, result.text);
+
+    this.memory?.addMessage({ role: "assistant", content: result.text });
+    await this.memory?.compactIfNeeded();
+
+    // Extract user facts in background (non-blocking)
+    if (this.userMemory) {
+      void this.userMemory
+        .extractAndSave(userMessage, result.text)
+        .catch(() => {});
+    }
+
+    return result;
+  }
+
   async chat(userMessage: string): Promise<CompanionResponse> {
     // Record interaction for affinity tracking
     this.affinity?.recordInteraction();

@@ -14,7 +14,7 @@ import {
   AffinityManager,
   MemoryManager,
 } from "@ai-companion/core";
-import type { VoiceEngine } from "@ai-companion/core";
+import type { VoiceEngine, CompanionResponse, OpenPetsReaction } from "@ai-companion/core";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
@@ -67,7 +67,9 @@ const voice = new UnifiedVoiceSynthesizer({
     : undefined,
 });
 
-const message = process.argv.slice(2).join(" ");
+const args = process.argv.slice(2);
+const streamMode = args.includes("--stream");
+const message = args.filter((a) => a !== "--stream").join(" ");
 
 if (!message) {
   const greeting = ai.getGreeting();
@@ -259,6 +261,33 @@ if (message.startsWith("/")) {
   } else {
     console.log(`不明なコマンド: /${cmd}`);
     console.log(`/help でコマンド一覧を表示できます。`);
+  }
+} else if (streamMode) {
+  // Streaming conversation
+  const gen = ai.streamChat(message);
+  let result: CompanionResponse | undefined;
+
+  while (true) {
+    const { value, done } = await gen.next();
+    if (done) {
+      result = value as CompanionResponse;
+      break;
+    }
+    process.stdout.write(value as string);
+  }
+  process.stdout.write("\n");
+
+  if (result) {
+    await Promise.all([
+      openpets.say(result.text, result.reaction as OpenPetsReaction).catch(() => {}),
+      voice.speak(result.text, stateDir).catch(() => {}),
+    ]);
+    await openpets.react("idle").catch(() => {});
+
+    try {
+      mkdirSync(stateDir, { recursive: true });
+    } catch {}
+    writeFileSync(resolve(stateDir, "last-message.txt"), result.text, "utf-8");
   }
 } else {
   // Normal conversation

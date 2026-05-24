@@ -12,6 +12,7 @@
     "build": "npm run build --workspaces",
     "dev:terminal": "npm run dev --workspace=packages/terminal",
     "chat": "npx tsx packages/terminal/src/cli.ts",
+    "chat:stream": "npx tsx packages/terminal/src/cli.ts --stream",
     "talk": "python scripts/ptt.py",
     "talk:vad": "python scripts/ptt.py --vad",
     "pet:idle": "python scripts/pet_idle.py",
@@ -22,7 +23,11 @@
     "start:vad": "pwsh -NoProfile -File scripts/start-all.ps1 -vad",
     "stop": "pwsh -NoProfile -File scripts/stop-all.ps1",
     "scheduler": "npx tsx scripts/scheduler.ts",
-    "health": "npx tsx scripts/health-check.ts"
+    "health": "npx tsx scripts/health-check.ts",
+    "fish-speech:setup": "pwsh -NoProfile -File scripts/setup-fish-speech.ps1",
+    "fish-speech:start": "pwsh -NoProfile -File scripts/start-fish-speech.ps1",
+    "voice:switch": "npx tsx scripts/switch-voice-engine.ts",
+    "doctor": "npx tsx scripts/doctor.ts"
   },
   "engines": {
     "node": ">=20"
