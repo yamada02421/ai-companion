@@ -1,52 +1,113 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Character } from "./character.js";
 import { buildSystemPrompt } from "./character.js";
+import { MemoryManager } from "./memory.js";
+import type { OpenPetsReaction } from "./openpets.js";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
+export interface CompanionResponse {
+  text: string;
+  reaction: OpenPetsReaction;
+}
+
+const REACTION_INSTRUCTION = `
+
+【出力形式】
+必ず以下のJSON形式で応答してください。他の形式は使わないでください。
+{"text": "あなたの応答テキスト", "reaction": "感情"}
+
+reactionは以下から1つ選んでください:
+- idle: 普通、特に感情なし
+- thinking: 考えている、興味深い
+- working: 作業に関する話題
+- waving: 挨拶、お疲れ様
+- success: うまくいった、良いニュース
+- celebrating: すごい、おめでとう
+- error: エラー、失敗、残念
+- waiting: 待っている`;
+
 export class CompanionAI {
   private client: Anthropic;
   private character: Character;
   private systemPrompt: string;
-  private history: Message[] = [];
+  private memory: MemoryManager | null = null;
 
-  constructor(character: Character, apiKey?: string) {
+  constructor(character: Character, apiKey?: string, historyPath?: string) {
     this.client = new Anthropic({ apiKey });
     this.character = character;
-    this.systemPrompt = buildSystemPrompt(character);
+    this.systemPrompt = buildSystemPrompt(character) + REACTION_INSTRUCTION;
+
+    if (historyPath) {
+      this.memory = new MemoryManager(historyPath, apiKey);
+    }
   }
 
-  async chat(userMessage: string): Promise<string> {
-    this.history.push({ role: "user", content: userMessage });
+  private buildSystemMessages(): Anthropic.Messages.TextBlockParam[] {
+    const memoryContext = this.memory?.getMemoryContext() ?? "";
+    const fullPrompt = memoryContext
+      ? `${this.systemPrompt}\n\n${memoryContext}`
+      : this.systemPrompt;
+
+    return [
+      { type: "text", text: fullPrompt, cache_control: { type: "ephemeral" } },
+    ];
+  }
+
+  private parseResponse(raw: string): CompanionResponse {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.text && parsed.reaction) {
+        return { text: parsed.text, reaction: parsed.reaction };
+      }
+    } catch {}
+    // Fallback: try to extract JSON from mixed output
+    const match = raw.match(/\{[^}]*"text"\s*:\s*"[^"]*"[^}]*\}/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        if (parsed.text) {
+          return { text: parsed.text, reaction: parsed.reaction ?? "idle" };
+        }
+      } catch {}
+    }
+    return { text: raw, reaction: "idle" };
+  }
+
+  async chat(userMessage: string): Promise<CompanionResponse> {
+    this.memory?.addMessage({ role: "user", content: userMessage });
+
+    const messages = this.memory?.getActiveHistory() ?? [];
+
+    const response = await this.client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      system: this.buildSystemMessages(),
+      messages,
+    });
+
+    const raw =
+      response.content[0].type === "text" ? response.content[0].text : "";
+    const result = this.parseResponse(raw);
+
+    this.memory?.addMessage({ role: "assistant", content: result.text });
+    await this.memory?.compactIfNeeded();
+
+    return result;
+  }
+
+  async proactiveMessage(context: string): Promise<CompanionResponse> {
+    const recentHistory = this.memory?.getActiveHistory().slice(-10) ?? [];
 
     const response = await this.client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 300,
-      system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
-      messages: this.history,
-    });
-
-    const text =
-      response.content[0].type === "text" ? response.content[0].text : "";
-
-    this.history.push({ role: "assistant", content: text });
-
-    if (this.history.length > 40) {
-      this.history = this.history.slice(-30);
-    }
-
-    return text;
-  }
-
-  async proactiveMessage(context: string): Promise<string> {
-    const response = await this.client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 200,
-      system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
+      system: this.buildSystemMessages(),
       messages: [
+        ...recentHistory,
         {
           role: "user",
           content: `以下の情報をキャラクターとしてユーザーに伝えてください:\n\n${context}`,
@@ -54,11 +115,14 @@ export class CompanionAI {
       ],
     });
 
-    const text =
+    const raw =
       response.content[0].type === "text" ? response.content[0].text : "";
+    const result = this.parseResponse(raw);
 
-    this.history.push({ role: "assistant", content: text });
-    return text;
+    this.memory?.addMessage({ role: "assistant", content: result.text });
+    await this.memory?.compactIfNeeded();
+
+    return result;
   }
 
   getGreeting(): string {

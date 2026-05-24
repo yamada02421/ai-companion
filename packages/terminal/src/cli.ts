@@ -1,0 +1,67 @@
+import { config } from "dotenv";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+import { existsSync, writeFileSync, mkdirSync } from "fs";
+import {
+  CompanionAI,
+  loadCharacter,
+  OpenPetsClient,
+  VoiceSynthesizer,
+  setLogDir,
+} from "@ai-companion/core";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(__dirname, "../../../.env") });
+
+const charName = process.env.COMPANION_CHAR ?? "default";
+const charPath = resolve(__dirname, `../../../characters/${charName}.yaml`);
+if (!existsSync(charPath)) {
+  console.error(`キャラクターファイルが見つかりません: ${charPath}`);
+  process.exit(1);
+}
+
+const historyPath = resolve(
+  __dirname,
+  `../../../.state/${charName}-history.json`,
+);
+const stateDir = resolve(__dirname, "../../../.state");
+setLogDir(stateDir);
+const character = loadCharacter(charPath);
+const ai = new CompanionAI(character, undefined, historyPath);
+const openpets = new OpenPetsClient();
+const voice = new VoiceSynthesizer({
+  speakerId: character.voice?.speaker_id,
+  speedScale: character.voice?.speed,
+  pitchScale: character.voice?.pitch,
+  volumeScale: character.voice?.volume,
+  rvc: character.voice?.rvc?.model_name
+    ? { modelName: character.voice.rvc.model_name, pitch: character.voice.rvc.pitch, projectRoot: resolve(__dirname, "../../..") }
+    : undefined,
+});
+
+const message = process.argv.slice(2).join(" ");
+
+if (!message) {
+  const greeting = ai.getGreeting();
+  console.log(greeting);
+  await Promise.all([
+    openpets.say(greeting, "waving").catch(() => {}),
+    voice.speak(greeting, stateDir).catch(() => {}),
+  ]);
+  await openpets.react("idle").catch(() => {});
+  process.exit(0);
+}
+
+const { text, reaction } = await ai.chat(message);
+console.log(text);
+
+await Promise.all([
+  openpets.say(text, reaction).catch(() => {}),
+  voice.speak(text, stateDir).catch(() => {}),
+]);
+await openpets.react("idle").catch(() => {});
+
+try {
+  mkdirSync(stateDir, { recursive: true });
+} catch {}
+writeFileSync(resolve(stateDir, "last-message.txt"), text, "utf-8");

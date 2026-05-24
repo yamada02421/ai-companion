@@ -5,9 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsup src/index.ts --format esm",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js"
+    "build": "tsup src/index.tsx --format esm",
+    "build:notify": "tsup src/quick-notify.ts --format esm --outDir dist",
+    "dev": "tsx src/index.tsx",
+    "start": "node dist/index.js",
+    "notify": "node dist/quick-notify.js",
+    "chat": "tsx src/cli.ts"
   },
   "dependencies": {
     "@ai-companion/core": "*",

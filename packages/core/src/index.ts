@@ -1,5 +1,13 @@
-export { CompanionAI, type Message } from "./ai.js";
-export { loadCharacter, buildSystemPrompt, type Character } from "./character.js";
+export { CompanionAI, type Message, type CompanionResponse } from "./ai.js";
+export { loadCharacter, buildSystemPrompt, type Character, type EmotionBias } from "./character.js";
 export { fetchWeather, formatWeatherContext, type WeatherInfo } from "./weather.js";
 export { fetchNews, formatNewsContext, type NewsItem } from "./news.js";
 export { Scheduler, type NotifyType } from "./scheduler.js";
+export { fetchQiitaTrending, formatQiitaContext, type QiitaItem } from "./qiita.js";
+export { ContentCache } from "./cache.js";
+export { OpenPetsClient, type OpenPetsReaction } from "./openpets.js";
+export { detectEmotion } from "./emotion.js";
+export { MemoryManager, type ConversationMemory } from "./memory.js";
+export { VoiceSynthesizer, type VoiceConfig } from "./voice.js";
+export { VoiceConverter, type RVCConfig } from "./rvc.js";
+export { setLogDir, logError } from "./logger.js";

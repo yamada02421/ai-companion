@@ -1,8 +1,15 @@
 {
-  "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "declaration": false,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx"
   },
   "include": ["src"]
 }
