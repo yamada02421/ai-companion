@@ -144,12 +144,30 @@ try {
     exit 1
 }
 
+# --- 3. スケジューラ起動 ---
+Write-Status "▶" "スケジューラ起動中 (定期タスク管理)..."
+try {
+    $schedulerProc = Start-Process -FilePath "npx" `
+        -ArgumentList "tsx", "scripts/scheduler.ts" `
+        -WorkingDirectory $ProjectRoot `
+        -WindowStyle Hidden `
+        -PassThru `
+        -RedirectStandardOutput (Join-Path $StateDir "scheduler.log") `
+        -RedirectStandardError  (Join-Path $StateDir "scheduler.err.log")
+
+    $pids["scheduler"] = $schedulerProc.Id
+    Write-Ok "スケジューラ起動完了 (PID: $($schedulerProc.Id))"
+} catch {
+    Write-Err "スケジューラ起動失敗: $_"
+    # 致命的ではないので続行
+}
+
 # --- PID ファイル保存 ---
 $pids | ConvertTo-Json | Set-Content -Path $PidsFile -Encoding UTF8
 Write-Host ""
 Write-Status "📋" "PID 記録: $PidsFile"
 
-# --- 3. 音声会話起動 (フォアグラウンド) ---
+# --- 4. 音声会話起動 (フォアグラウンド) ---
 $talkMode = if ($vad) { "VAD" } else { "PTT (右Alt)" }
 Write-Host ""
 Write-Status "▶" "音声会話起動中 ($talkMode モード)..."

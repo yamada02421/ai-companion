@@ -302,6 +302,17 @@ export class AffinityManager {
   }
 
   /**
+   * Apply decay and mood update, then persist the result.
+   * Use this from external schedulers that need the side-effects saved.
+   */
+  applyDecayAndSave(): AffinityState {
+    this.checkDecay();
+    this.updateMood(new Date().toISOString());
+    this.save();
+    return { ...this.state };
+  }
+
+  /**
    * Check and apply affinity decay from inactivity.
    */
   checkDecay(): void {
