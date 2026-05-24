@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Companion Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <span class="header-icon">&#9670;</span>
+        <h1 class="header-title" id="charName">AI Companion</h1>
+      </div>
+      <div class="header-status">
+        <span class="status-dot"></span>
+        <span id="statusText">Online</span>
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <ul class="nav-list">
+        <li>
+          <button class="nav-btn active" data-section="history">
+            <span class="nav-icon">&#9776;</span>
+            <span>会話ログ</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-section="memory">
+            <span class="nav-icon">&#9733;</span>
+            <span>ユーザー記憶</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-section="settings">
+            <span class="nav-icon">&#9881;</span>
+            <span>設定</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- History Section -->
+      <section id="section-history" class="section active">
+        <div class="section-header">
+          <h2>会話ログ</h2>
+          <button class="btn btn-secondary" id="refreshHistory">更新</button>
+        </div>
+        <div class="card">
+          <div id="historyList" class="history-list">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Memory Section -->
+      <section id="section-memory" class="section">
+        <div class="section-header">
+          <h2>ユーザー記憶</h2>
+          <button class="btn btn-secondary" id="refreshMemory">更新</button>
+        </div>
+        <div id="memoryContent">
+          <p class="placeholder">読み込み中...</p>
+        </div>
+      </section>
+
+      <!-- Settings Section -->
+      <section id="section-settings" class="section">
+        <div class="section-header">
+          <h2>設定</h2>
+        </div>
+
+        <!-- Character Info Card -->
+        <div class="card" id="charInfoCard">
+          <h3>キャラクター情報</h3>
+          <div id="charInfo" class="char-info">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+
+        <!-- Voice Settings Card -->
+        <div class="card" id="voiceSettingsCard">
+          <h3>音声設定</h3>
+          <div class="settings-grid" id="voiceSettings">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+
+        <!-- Save Button -->
+        <div class="settings-actions">
+          <button class="btn btn-primary" id="saveSettings">保存</button>
+          <span id="saveStatus" class="save-status"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

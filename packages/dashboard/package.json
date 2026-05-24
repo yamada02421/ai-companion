@@ -1,0 +1,16 @@
+{
+  "name": "@ai-companion/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "yaml": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

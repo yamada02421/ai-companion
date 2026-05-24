@@ -5,7 +5,8 @@
   "description": "AI desktop/terminal companion with customizable characters",
   "workspaces": [
     "packages/core",
-    "packages/terminal"
+    "packages/terminal",
+    "packages/dashboard"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
@@ -13,7 +14,9 @@
     "rvc:start": "pwsh -NoProfile -File scripts/start-rvc.ps1",
     "chat": "npx tsx packages/terminal/src/cli.ts",
     "talk": "rvc_env\\Scripts\\python.exe scripts\\ptt.py",
-    "pet:idle": "python scripts/pet_idle.py"
+    "pet:idle": "python scripts/pet_idle.py",
+    "curate": "npx tsx packages/terminal/src/curate.ts",
+    "dashboard": "npx tsx packages/dashboard/src/server.ts"
   },
   "engines": {
     "node": ">=20"
