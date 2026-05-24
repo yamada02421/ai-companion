@@ -31,3 +31,5 @@ export {
   type AffinityState,
   type Mood,
 } from "./affinity.js";
+export { ScreenCapture } from "./screen-capture.js";
+export { ScreenObserver } from "./screen-observer.js";

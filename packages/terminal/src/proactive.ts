@@ -14,6 +14,8 @@ import {
   OpenPetsClient,
   UnifiedVoiceSynthesizer,
   NewsCurator,
+  ScreenCapture,
+  ScreenObserver,
 } from "@ai-companion/core";
 import type { VoiceEngine } from "@ai-companion/core";
 
@@ -80,11 +82,11 @@ const voice = new UnifiedVoiceSynthesizer({
 const CACHE_30MIN = 30 * 60 * 1000;
 const CACHE_1HOUR = 60 * 60 * 1000;
 
-type Mode = "news" | "qiita" | "work" | "casual" | "curate";
+type Mode = "news" | "qiita" | "work" | "casual" | "curate" | "observe";
 
 // --- #4: 時間帯別モード選択 ---
 function pickMode(): Mode {
-  if (mode && ["news", "qiita", "work", "casual", "curate"].includes(mode)) {
+  if (mode && ["news", "qiita", "work", "casual", "curate", "observe"].includes(mode)) {
     return mode as Mode;
   }
   const hour = new Date().getHours();
@@ -104,8 +106,8 @@ function pickMode(): Mode {
     if (elapsed > 2 * 60 * 60 * 1000 && Math.random() < 0.5) return "casual";
   } catch {}
 
-  const modes: Mode[] = ["news", "qiita", "work", "casual", "curate"];
-  const weights = [2, 3, 2, 2, 3];
+  const modes: Mode[] = ["news", "qiita", "work", "casual", "curate", "observe"];
+  const weights = [2, 3, 2, 2, 3, 2];
   const total = weights.reduce((a, b) => a + b, 0);
   let r = Math.random() * total;
   for (let i = 0; i < modes.length; i++) {
@@ -255,6 +257,23 @@ async function run() {
       reaction = "thinking";
       break;
     }
+    case "observe": {
+      try {
+        const capture = new ScreenCapture();
+        const screenshot = await capture.capture();
+        const observer = new ScreenObserver();
+        const observation = await observer.observe(screenshot);
+        if (observation) {
+          context = `ユーザーの画面を観察した結果:\n${observation}\n\nこの状況について、キャラクターとして短くコメントしてください。応援・共感・気遣いなど自然な一言を。`;
+          reaction = "thinking";
+        }
+      } catch {
+        // スクリーンショット取得失敗時はcasualにフォールバック
+        context = getCasualContext();
+        reaction = "waving";
+      }
+      break;
+    }
     case "casual": {
       context = getCasualContext();
       reaction = "waving";
@@ -265,7 +284,7 @@ async function run() {
   if (!context) process.exit(0);
 
   const { text, reaction: aiReaction } = await ai.proactiveMessage(context);
-  const label = { news: "📰", qiita: "📝", work: "💻", casual: "💬", curate: "🗞️" }[selected];
+  const label = { news: "📰", qiita: "📝", work: "💻", casual: "💬", curate: "🗞️", observe: "👀" }[selected];
   console.log(`\n${label} ${character.display_name}: ${text}`);
 
   // ステート保存
