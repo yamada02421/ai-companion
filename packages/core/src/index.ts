@@ -52,3 +52,7 @@ export {
   HealthChecker,
   type ServiceStatus,
 } from "./health.js";
+export {
+  ConversationStats,
+  type StatsData,
+} from "./stats.js";
