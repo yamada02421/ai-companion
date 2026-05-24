@@ -22,29 +22,36 @@
 
     <!-- Sidebar -->
     <nav class="sidebar">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="メニュー切り替え">&#9776;</button>
       <ul class="nav-list">
         <li>
           <button class="nav-btn active" data-section="history">
             <span class="nav-icon">&#9776;</span>
-            <span>会話ログ</span>
+            <span class="nav-label">会話ログ</span>
           </button>
         </li>
         <li>
           <button class="nav-btn" data-section="affinity">
             <span class="nav-icon">&#9829;</span>
-            <span>好感度</span>
+            <span class="nav-label">好感度</span>
           </button>
         </li>
         <li>
           <button class="nav-btn" data-section="memory">
             <span class="nav-icon">&#9733;</span>
-            <span>ユーザー記憶</span>
+            <span class="nav-label">ユーザー記憶</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-section="news">
+            <span class="nav-icon">&#128240;</span>
+            <span class="nav-label">ニュース</span>
           </button>
         </li>
         <li>
           <button class="nav-btn" data-section="settings">
             <span class="nav-icon">&#9881;</span>
-            <span>設定</span>
+            <span class="nav-label">設定</span>
           </button>
         </li>
       </ul>
@@ -56,10 +63,71 @@
       <section id="section-history" class="section active">
         <div class="section-header">
           <h2>会話ログ</h2>
-          <button class="btn btn-secondary" id="refreshHistory">更新</button>
+          <div class="section-header-actions">
+            <span class="spinner" id="spinnerHistory"></span>
+            <button class="btn btn-secondary" id="refreshHistory">更新</button>
+          </div>
+        </div>
+        <div class="search-box">
+          <input type="text" id="historySearch" class="search-input" placeholder="会話を検索...">
+          <span class="search-icon">&#128269;</span>
         </div>
         <div class="card">
           <div id="historyList" class="history-list">
+            <p class="placeholder">読み込み中...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Affinity Section -->
+      <section id="section-affinity" class="section">
+        <div class="section-header">
+          <h2>好感度・ムード</h2>
+          <div class="section-header-actions">
+            <span class="spinner" id="spinnerAffinity"></span>
+            <button class="btn btn-secondary" id="refreshAffinity">更新</button>
+          </div>
+        </div>
+
+        <!-- Level Card -->
+        <div class="card">
+          <h3>好感度レベル</h3>
+          <div class="affinity-level-display">
+            <div class="affinity-level-number" id="affinityLevel">--</div>
+            <div class="affinity-level-bar-wrap">
+              <div class="affinity-level-bar" id="affinityBar" style="width: 0%"></div>
+            </div>
+            <div class="affinity-level-label">/100</div>
+          </div>
+        </div>
+
+        <!-- Mood & Stats Card -->
+        <div class="card">
+          <h3>ステータス</h3>
+          <div class="affinity-stats">
+            <div class="affinity-stat">
+              <div class="affinity-stat-label">現在の気分</div>
+              <div class="affinity-stat-value" id="affinityMood">--</div>
+            </div>
+            <div class="affinity-stat">
+              <div class="affinity-stat-label">連続会話日数</div>
+              <div class="affinity-stat-value" id="affinityStreak">--</div>
+            </div>
+            <div class="affinity-stat">
+              <div class="affinity-stat-label">累計会話回数</div>
+              <div class="affinity-stat-value" id="affinityTotal">--</div>
+            </div>
+            <div class="affinity-stat">
+              <div class="affinity-stat-label">最終会話</div>
+              <div class="affinity-stat-value" id="affinityLastChat">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Milestones Card -->
+        <div class="card">
+          <h3>マイルストーン</h3>
+          <div id="affinityMilestones" class="affinity-milestones">
             <p class="placeholder">読み込み中...</p>
           </div>
         </div>
@@ -69,10 +137,29 @@
       <section id="section-memory" class="section">
         <div class="section-header">
           <h2>ユーザー記憶</h2>
-          <button class="btn btn-secondary" id="refreshMemory">更新</button>
+          <div class="section-header-actions">
+            <span class="spinner" id="spinnerMemory"></span>
+            <button class="btn btn-secondary" id="refreshMemory">更新</button>
+          </div>
         </div>
         <div id="memoryContent">
           <p class="placeholder">読み込み中...</p>
+        </div>
+      </section>
+
+      <!-- News / Curator History Section -->
+      <section id="section-news" class="section">
+        <div class="section-header">
+          <h2>ニュース履歴</h2>
+          <div class="section-header-actions">
+            <span class="spinner" id="spinnerNews"></span>
+            <button class="btn btn-secondary" id="refreshNews">更新</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="newsList" class="news-list">
+            <p class="placeholder">読み込み中...</p>
+          </div>
         </div>
       </section>
 

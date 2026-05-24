@@ -11,12 +11,23 @@
 - [x] proactive.ts に curate モード統合
 - [x] Stop Hook 開発モード（短い完了通知のみ）
 
-### v0.7 — 次の改善候補（優先順に）
-- [ ] Fish Speech S2 でTTS置き換え（ストリーミング＋感情制御）— SPEC作成中
-- [ ] Live2D 化（ViviPet or Open-LLM-VTuber）— SPEC作成中
-- [ ] プロアクティブ会話＋画面認識
-- [ ] 好感度システム
+### v0.7 — 実装済み ✅（2026-05-24）
+- [x] FishSpeechSynthesizer + UnifiedVoiceSynthesizer（エンジン切替+フォールバック）
+- [x] PetDisplay 抽象化 + ViviPetClient + OpenPetsAdapter
+- [x] AffinityManager（好感度・ムード・マイルストーン・ダッシュボード対応）
+- [x] cli/proactive/curate/summarize-work を UnifiedVoiceSynthesizer に移行
+- [x] RVC 完全撤去（コード・参照全削除）
+- [x] 不要ファイル整理（親ディレクトリのテンプレート削除）
+
+### v0.8 — 実装中 ✅（2026-05-24）
+- [x] 画面認識プロアクティブ会話（ScreenCapture + ScreenObserver + observe モード）
+- [ ] ダッシュボード強化（自動更新・会話検索・ニュース履歴・UI改善）— 実装中
+
+### v0.9 — 次の改善候補
+- [ ] Fish Speech S2 サーバーのセットアップ＋実動作確認
+- [ ] ViviPet のインストール＋ PetDisplay 切替テスト
 - [ ] VAD（音声検出）でハンズフリー化
+- [ ] 複数キャラ対応
 
 ---
 

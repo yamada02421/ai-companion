@@ -1,6 +1,12 @@
 // ===== State =====
 let currentSection = "history";
 let settingsData = null;
+let historyData = []; // Cached for client-side search
+
+// Auto-refresh timers
+let historyTimer = null;
+let affinityTimer = null;
+let memoryTimer = null;
 
 // ===== DOM Elements =====
 const navButtons = document.querySelectorAll(".nav-btn");
@@ -8,12 +14,22 @@ const sections = document.querySelectorAll(".section");
 const charNameEl = document.getElementById("charName");
 const statusTextEl = document.getElementById("statusText");
 
+// ===== Sidebar Toggle (narrow viewport) =====
+const sidebarToggle = document.getElementById("sidebarToggle");
+const sidebar = document.querySelector(".sidebar");
+
+sidebarToggle.addEventListener("click", () => {
+  sidebar.classList.toggle("expanded");
+});
+
 // ===== Navigation =====
 navButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     const section = btn.dataset.section;
     if (!section) return;
     switchSection(section);
+    // Collapse sidebar on narrow screens after selection
+    sidebar.classList.remove("expanded");
   });
 });
 
@@ -28,10 +44,54 @@ function switchSection(name) {
     sec.classList.toggle("active", sec.id === `section-${name}`);
   });
 
-  // Load data on switch
-  if (name === "history") loadHistory();
-  if (name === "memory") loadMemory();
+  // Clear all auto-refresh timers
+  clearAutoRefresh();
+
+  // Load data on switch & start relevant auto-refresh
+  if (name === "history") {
+    loadHistory();
+    startHistoryAutoRefresh();
+  }
+  if (name === "affinity") {
+    loadAffinity();
+    startAffinityAutoRefresh();
+  }
+  if (name === "memory") {
+    loadMemory();
+    startMemoryAutoRefresh();
+  }
+  if (name === "news") loadNews();
   if (name === "settings") loadSettings();
+}
+
+// ===== Auto-Refresh =====
+function clearAutoRefresh() {
+  if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
+  if (affinityTimer) { clearInterval(affinityTimer); affinityTimer = null; }
+  if (memoryTimer) { clearInterval(memoryTimer); memoryTimer = null; }
+}
+
+function startHistoryAutoRefresh() {
+  historyTimer = setInterval(() => loadHistory(true), 10000);
+}
+
+function startAffinityAutoRefresh() {
+  affinityTimer = setInterval(() => loadAffinity(true), 30000);
+}
+
+function startMemoryAutoRefresh() {
+  memoryTimer = setInterval(() => loadMemory(true), 30000);
+}
+
+// ===== Spinner Helpers =====
+function showSpinner(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add("active");
+}
+
+function hideSpinner(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove("active");
 }
 
 // ===== API Helpers =====
@@ -50,8 +110,10 @@ async function apiFetch(path, options = {}) {
 }
 
 // ===== History =====
-async function loadHistory() {
+async function loadHistory(isAutoRefresh = false) {
   const container = document.getElementById("historyList");
+  if (isAutoRefresh) showSpinner("spinnerHistory");
+
   try {
     const data = await apiFetch("/api/history");
 
@@ -60,46 +122,99 @@ async function loadHistory() {
       document.title = `${data.charName} - Dashboard`;
     }
 
-    const history = data.history || [];
-    if (history.length === 0) {
-      container.innerHTML = renderEmptyState("&#9776;", "会話ログがありません");
-      return;
-    }
+    historyData = data.history || [];
 
-    container.innerHTML = history
-      .map((msg, i) => renderMessage(msg, i))
-      .join("");
-
-    // Scroll to bottom
-    container.scrollTop = container.scrollHeight;
+    // Apply current search filter
+    const searchInput = document.getElementById("historySearch");
+    const query = searchInput ? searchInput.value.trim() : "";
+    renderHistoryFiltered(query);
   } catch (e) {
     container.innerHTML = renderEmptyState("!", "会話ログの読み込みに失敗しました");
+  } finally {
+    hideSpinner("spinnerHistory");
   }
 }
 
-function renderMessage(msg, index) {
+function renderHistoryFiltered(query) {
+  const container = document.getElementById("historyList");
+  let filtered = historyData;
+
+  if (query) {
+    const lower = query.toLowerCase();
+    filtered = historyData.filter((msg) => {
+      const content = (msg.content || "").toLowerCase();
+      return content.includes(lower);
+    });
+  }
+
+  if (filtered.length === 0) {
+    const text = query ? `「${escapeHtml(query)}」に一致する会話はありません` : "会話ログがありません";
+    container.innerHTML = renderEmptyState("&#9776;", text);
+    return;
+  }
+
+  container.innerHTML = filtered
+    .map((msg, i) => renderMessage(msg, i, query))
+    .join("");
+
+  // Scroll to bottom
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderMessage(msg, index, searchQuery) {
   const role = msg.role || "unknown";
   const isUser = role === "user";
   const roleLabel = isUser ? "You" : "Assistant";
   const cssClass = isUser ? "msg-user" : "msg-assistant";
+  const avatar = isUser ? "👤" : "🤖";
 
   const time = msg.timestamp
     ? `<span class="msg-time">${formatTime(msg.timestamp)}</span>`
     : "";
 
-  const content = escapeHtml(msg.content || "");
+  let content = escapeHtml(msg.content || "");
+
+  // Highlight search matches
+  if (searchQuery) {
+    content = highlightText(content, searchQuery);
+  }
 
   return `
     <div class="msg ${cssClass}">
-      <div><span class="msg-role">${roleLabel}</span>${time}</div>
+      <div class="msg-header">
+        <span class="msg-avatar">${avatar}</span>
+        <span class="msg-role">${roleLabel}</span>${time}
+      </div>
       <div class="msg-content">${content}</div>
     </div>
   `;
 }
 
+function highlightText(html, query) {
+  if (!query) return html;
+  // Escape regex special characters in the query
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escaped})`, "gi");
+  return html.replace(regex, '<mark class="search-highlight">$1</mark>');
+}
+
+// ===== Search Handler =====
+const historySearchInput = document.getElementById("historySearch");
+if (historySearchInput) {
+  let searchTimeout = null;
+  historySearchInput.addEventListener("input", () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      renderHistoryFiltered(historySearchInput.value.trim());
+    }, 200);
+  });
+}
+
 // ===== Memory =====
-async function loadMemory() {
+async function loadMemory(isAutoRefresh = false) {
   const container = document.getElementById("memoryContent");
+  if (isAutoRefresh) showSpinner("spinnerMemory");
+
   try {
     const data = await apiFetch("/api/user-memory");
 
@@ -149,6 +264,8 @@ async function loadMemory() {
       "!",
       "ユーザー記憶の読み込みに失敗しました"
     );
+  } finally {
+    hideSpinner("spinnerMemory");
   }
 }
 
@@ -231,6 +348,129 @@ async function deleteFact(factId) {
     loadMemory(); // Reload
   } catch (e) {
     alert("削除に失敗しました: " + e.message);
+  }
+}
+
+// ===== Affinity =====
+const MOOD_LABELS = {
+  neutral: "落ち着いている",
+  happy: "嬉しい",
+  curious: "興味深い",
+  tired: "少し疲れている",
+  lonely: "寂しい",
+  excited: "テンションが高い",
+};
+
+const MOOD_ICONS = {
+  neutral: "\u{1F610}",
+  happy: "\u{1F60A}",
+  curious: "\u{1F914}",
+  tired: "\u{1F634}",
+  lonely: "\u{1F622}",
+  excited: "\u{1F929}",
+};
+
+const ALL_MILESTONES = {
+  first_chat: "初めての会話",
+  level_10: "好感度 10 到達",
+  level_25: "好感度 25 到達",
+  level_50: "好感度 50 到達",
+  level_75: "好感度 75 到達",
+  level_100: "好感度 MAX 到達",
+  streak_7: "7日連続会話",
+  streak_30: "30日連続会話",
+};
+
+async function loadAffinity(isAutoRefresh = false) {
+  if (isAutoRefresh) showSpinner("spinnerAffinity");
+
+  try {
+    const data = await apiFetch("/api/affinity");
+
+    if (data.charName) {
+      charNameEl.textContent = data.charName;
+    }
+
+    const a = data.affinity;
+    if (!a) {
+      document.getElementById("affinityLevel").textContent = "0";
+      document.getElementById("affinityBar").style.width = "0%";
+      document.getElementById("affinityMood").textContent = "--";
+      document.getElementById("affinityStreak").textContent = "0 日";
+      document.getElementById("affinityTotal").textContent = "0 回";
+      document.getElementById("affinityLastChat").textContent = "なし";
+      document.getElementById("affinityMilestones").innerHTML =
+        renderEmptyState("\u{2665}", "まだマイルストーンはありません");
+      return;
+    }
+
+    const level = Math.floor(a.level || 0);
+    document.getElementById("affinityLevel").textContent = String(level);
+    document.getElementById("affinityBar").style.width = `${level}%`;
+
+    const mood = a.mood || "neutral";
+    const moodIcon = MOOD_ICONS[mood] || "";
+    const moodLabel = MOOD_LABELS[mood] || mood;
+    document.getElementById("affinityMood").textContent = `${moodIcon} ${moodLabel}`;
+
+    document.getElementById("affinityStreak").textContent = `${a.streak || 0} 日`;
+    document.getElementById("affinityTotal").textContent = `${a.totalInteractions || 0} 回`;
+
+    document.getElementById("affinityLastChat").textContent = a.lastInteraction
+      ? formatTime(a.lastInteraction)
+      : "なし";
+
+    // Milestones
+    const achieved = a.milestones || [];
+    const container = document.getElementById("affinityMilestones");
+    const milestoneHtml = Object.entries(ALL_MILESTONES)
+      .map(([key, label]) => {
+        const done = achieved.includes(key);
+        return `<div class="milestone-item ${done ? "achieved" : "locked"}">
+          <span class="milestone-icon">${done ? "\u{2713}" : "\u{1F512}"}</span>
+          <span class="milestone-label">${escapeHtml(label)}</span>
+        </div>`;
+      })
+      .join("");
+    container.innerHTML = milestoneHtml;
+  } catch (e) {
+    console.error("Failed to load affinity:", e);
+  } finally {
+    hideSpinner("spinnerAffinity");
+  }
+}
+
+// ===== News / Curator History =====
+async function loadNews(isAutoRefresh = false) {
+  const container = document.getElementById("newsList");
+  if (isAutoRefresh) showSpinner("spinnerNews");
+
+  try {
+    const data = await apiFetch("/api/curator-history");
+    const urls = data.urls || [];
+
+    if (urls.length === 0) {
+      container.innerHTML = renderEmptyState("📰", "通知済みのニュースはまだありません");
+      return;
+    }
+
+    container.innerHTML = urls
+      .map((url, i) => {
+        const safeUrl = escapeAttr(url);
+        const displayUrl = escapeHtml(url);
+        return `
+          <div class="news-item">
+            <span class="news-index">${i + 1}</span>
+            <span class="news-icon">🔗</span>
+            <a class="news-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${displayUrl}</a>
+          </div>
+        `;
+      })
+      .join("");
+  } catch (e) {
+    container.innerHTML = renderEmptyState("!", "ニュース履歴の読み込みに失敗しました");
+  } finally {
+    hideSpinner("spinnerNews");
   }
 }
 
@@ -382,8 +622,10 @@ document.getElementById("saveSettings").addEventListener("click", async () => {
 });
 
 // Refresh buttons
-document.getElementById("refreshHistory").addEventListener("click", loadHistory);
-document.getElementById("refreshMemory").addEventListener("click", loadMemory);
+document.getElementById("refreshHistory").addEventListener("click", () => loadHistory());
+document.getElementById("refreshAffinity").addEventListener("click", () => loadAffinity());
+document.getElementById("refreshMemory").addEventListener("click", () => loadMemory());
+document.getElementById("refreshNews").addEventListener("click", () => loadNews());
 
 // ===== Utility =====
 function escapeHtml(str) {
@@ -423,3 +665,4 @@ function renderEmptyState(icon, text) {
 
 // ===== Init =====
 loadHistory();
+startHistoryAutoRefresh();

@@ -182,6 +182,13 @@ function handleGetSettings(res: http.ServerResponse): void {
   sendJson(res, 200, { charName: CHAR_NAME, settings: data });
 }
 
+/** GET /api/curator-history */
+function handleGetCuratorHistory(res: http.ServerResponse): void {
+  const historyPath = path.join(STATE_DIR, "curator-history.json");
+  const data = readJsonFile(historyPath) as { urls?: string[] } | null;
+  sendJson(res, 200, { urls: data?.urls || [] });
+}
+
 /** PUT /api/settings */
 async function handlePutSettings(
   req: http.IncomingMessage,
@@ -260,6 +267,8 @@ const server = http.createServer(async (req, res) => {
     ) {
       const factId = decodeURIComponent(pathname.slice("/api/user-memory/".length));
       handleDeleteUserMemory(res, factId);
+    } else if (pathname === "/api/curator-history" && method === "GET") {
+      handleGetCuratorHistory(res);
     } else if (pathname === "/api/settings" && method === "GET") {
       handleGetSettings(res);
     } else if (pathname === "/api/settings" && method === "PUT") {
