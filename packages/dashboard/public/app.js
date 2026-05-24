@@ -7,6 +7,7 @@ let historyData = []; // Cached for client-side search
 let historyTimer = null;
 let affinityTimer = null;
 let memoryTimer = null;
+let timelineTimer = null;
 
 // ===== DOM Elements =====
 const navButtons = document.querySelectorAll(".nav-btn");
@@ -60,6 +61,10 @@ function switchSection(name) {
     loadMemory();
     startMemoryAutoRefresh();
   }
+  if (name === "timeline") {
+    loadTimeline();
+    startTimelineAutoRefresh();
+  }
   if (name === "news") loadNews();
   if (name === "characters") loadCharacters();
   if (name === "settings") loadSettings();
@@ -70,6 +75,7 @@ function clearAutoRefresh() {
   if (historyTimer) { clearInterval(historyTimer); historyTimer = null; }
   if (affinityTimer) { clearInterval(affinityTimer); affinityTimer = null; }
   if (memoryTimer) { clearInterval(memoryTimer); memoryTimer = null; }
+  if (timelineTimer) { clearInterval(timelineTimer); timelineTimer = null; }
 }
 
 function startHistoryAutoRefresh() {
@@ -475,6 +481,166 @@ async function loadNews(isAutoRefresh = false) {
   }
 }
 
+// ===== Timeline =====
+const TIMELINE_ICONS = {
+  chat: "\u{1F4AC}",       // speech balloon
+  proactive: "\u{1F4E2}",  // loudspeaker
+  curate: "\u{1F4F0}",     // newspaper
+  observe: "\u{1F441}",    // eye
+  milestone: "\u{1F3C6}",  // trophy
+  system: "\u{2699}",      // gear
+};
+
+const TIMELINE_TYPE_LABELS = {
+  chat: "会話",
+  proactive: "声かけ",
+  curate: "ニュース",
+  observe: "画面観察",
+  milestone: "マイルストーン",
+  system: "システム",
+};
+
+function startTimelineAutoRefresh() {
+  timelineTimer = setInterval(() => loadTimeline(true), 15000);
+}
+
+async function loadTimeline(isAutoRefresh = false) {
+  const container = document.getElementById("timelineList");
+  if (isAutoRefresh) showSpinner("spinnerTimeline");
+
+  try {
+    const dateInput = document.getElementById("timelineDateFilter");
+    const dateValue = dateInput ? dateInput.value : "";
+
+    let apiUrl = "/api/timeline";
+    if (dateValue) {
+      apiUrl += `?date=${encodeURIComponent(dateValue)}`;
+    }
+
+    const data = await apiFetch(apiUrl);
+    const events = data.events || [];
+
+    if (events.length === 0) {
+      const msg = dateValue
+        ? `${dateValue} のイベントはありません`
+        : "タイムラインイベントがまだありません";
+      container.innerHTML = renderEmptyState("\u{1F551}", msg);
+      return;
+    }
+
+    // Group events by date
+    const grouped = groupTimelineByDate(events);
+    container.innerHTML = Object.entries(grouped)
+      .map(([date, evts]) => renderTimelineDateGroup(date, evts))
+      .join("");
+
+    // Attach toggle handlers for details
+    container.querySelectorAll(".timeline-event-toggle").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const detailsEl = btn.parentElement.querySelector(".timeline-event-details");
+        if (detailsEl) {
+          detailsEl.classList.toggle("open");
+          btn.textContent = detailsEl.classList.contains("open") ? "閉じる" : "詳細";
+        }
+      });
+    });
+  } catch (e) {
+    container.innerHTML = renderEmptyState("!", "タイムラインの読み込みに失敗しました");
+  } finally {
+    hideSpinner("spinnerTimeline");
+  }
+}
+
+function groupTimelineByDate(events) {
+  const groups = {};
+  events.forEach((evt) => {
+    const date = evt.timestamp ? evt.timestamp.slice(0, 10) : "unknown";
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(evt);
+  });
+  return groups;
+}
+
+function formatDateLabel(dateStr) {
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return dateStr;
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+    if (dateStr === todayStr) return "今日";
+    if (dateStr === yesterdayStr) return "昨日";
+
+    return d.toLocaleDateString("ja-JP", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+function renderTimelineDateGroup(date, events) {
+  const label = formatDateLabel(date);
+  const items = events.map((evt) => renderTimelineEvent(evt)).join("");
+  return `
+    <div class="timeline-date-group">
+      <div class="timeline-date-label">${escapeHtml(label)}</div>
+      ${items}
+    </div>
+  `;
+}
+
+function renderTimelineEvent(evt) {
+  const icon = TIMELINE_ICONS[evt.type] || "\u{2022}";
+  const typeLabel = TIMELINE_TYPE_LABELS[evt.type] || evt.type;
+  const time = evt.timestamp ? formatTimeShort(evt.timestamp) : "";
+  const hasDetails = evt.details && evt.details !== evt.summary;
+
+  return `
+    <div class="timeline-event">
+      <span class="timeline-event-icon">${icon}</span>
+      <div class="timeline-event-body">
+        <div class="timeline-event-header">
+          <span class="timeline-event-type type-${escapeAttr(evt.type)}">${escapeHtml(typeLabel)}</span>
+          <span class="timeline-event-time">${time}</span>
+        </div>
+        <div class="timeline-event-summary">${escapeHtml(evt.summary)}</div>
+        ${hasDetails ? `
+          <button class="timeline-event-toggle">詳細</button>
+          <div class="timeline-event-details">${escapeHtml(evt.details)}</div>
+        ` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function formatTimeShort(ts) {
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
+
+// Timeline date filter handler
+const timelineDateInput = document.getElementById("timelineDateFilter");
+if (timelineDateInput) {
+  timelineDateInput.addEventListener("change", () => {
+    loadTimeline();
+  });
+}
+
 // ===== Characters =====
 async function loadCharacters() {
   const container = document.getElementById("charactersList");
@@ -697,6 +863,7 @@ document.getElementById("refreshHistory").addEventListener("click", () => loadHi
 document.getElementById("refreshAffinity").addEventListener("click", () => loadAffinity());
 document.getElementById("refreshMemory").addEventListener("click", () => loadMemory());
 document.getElementById("refreshNews").addEventListener("click", () => loadNews());
+document.getElementById("refreshTimeline").addEventListener("click", () => loadTimeline());
 document.getElementById("refreshCharacters").addEventListener("click", () => loadCharacters());
 
 // ===== Utility =====

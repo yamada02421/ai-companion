@@ -1,7 +1,7 @@
 import { config } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import {
   CompanionAI,
   loadCharacter,
@@ -14,7 +14,20 @@ import type { VoiceEngine } from "@ai-companion/core";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../../.env") });
 
-const charName = process.env.COMPANION_CHAR ?? "default";
+/** Resolve character name: COMPANION_CHAR env > .state/active-character.txt > "rei" */
+function resolveCharName(): string {
+  if (process.env.COMPANION_CHAR) return process.env.COMPANION_CHAR;
+  const activeFile = resolve(__dirname, "../../../.state/active-character.txt");
+  try {
+    const saved = readFileSync(activeFile, "utf-8").trim();
+    if (saved) return saved;
+  } catch {
+    // file doesn't exist yet
+  }
+  return "rei";
+}
+
+const charName = resolveCharName();
 const charPath = resolve(__dirname, `../../../characters/${charName}.yaml`);
 if (!existsSync(charPath)) {
   console.error(`キャラクターファイルが見つかりません: ${charPath}`);

@@ -17,6 +17,7 @@
     "pet:idle": "python scripts/pet_idle.py",
     "curate": "npx tsx packages/terminal/src/curate.ts",
     "dashboard": "npx tsx packages/dashboard/src/server.ts",
+    "create-character": "npx tsx scripts/create-character.ts",
     "start": "pwsh -NoProfile -File scripts/start-all.ps1",
     "start:vad": "pwsh -NoProfile -File scripts/start-all.ps1 -vad",
     "stop": "pwsh -NoProfile -File scripts/stop-all.ps1"
