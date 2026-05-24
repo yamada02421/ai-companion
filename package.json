@@ -12,7 +12,8 @@
     "build": "npm run build --workspaces",
     "dev:terminal": "npm run dev --workspace=packages/terminal",
     "chat": "npx tsx packages/terminal/src/cli.ts",
-    "talk": "rvc_env\\Scripts\\python.exe scripts\\ptt.py",
+    "talk": "python scripts/ptt.py",
+    "talk:vad": "python scripts/ptt.py --vad",
     "pet:idle": "python scripts/pet_idle.py",
     "curate": "npx tsx packages/terminal/src/curate.ts",
     "dashboard": "npx tsx packages/dashboard/src/server.ts"
