@@ -29,11 +29,36 @@
 - [x] 複数キャラ対応（default.yaml, ダッシュボード切替, create-character）
 - [x] アクティビティタイムライン（全イベント時系列記録+ダッシュボード表示）
 
-### v0.9 — 次の改善候補
-- [ ] Fish Speech S2 サーバーのセットアップ＋実動作確認
-- [ ] ViviPet のインストール＋ PetDisplay 切替テスト
+### v0.9 — 実装済み ✅（2026-05-25）
+- [x] Fish Speech セットアップ自動化（setup/start/switch スクリプト）
+- [x] ストリーミングチャット（streamChat + --stream フラグ）
+- [x] ダッシュボードにリアルタイムチャット機能（POST /api/chat + 音声再生）
+- [x] マークダウンエクスポート
+- [x] システム診断（npm run doctor、10項目チェック）
+- [x] 複数キャラ対応（default.yaml、ダッシュボード切替、create-character）
+- [x] 会話統計ダッシュボード（時間帯別/曜日別/トピックTOP5）
+- [x] 性格進化（知り合い→友達→親友→特別の4段階）
+- [x] 天気連動ムード変化
+- [x] CLIコマンド（/weather /news /mood /stats /topics /history /help）
+- [x] 通知サウンド＋Windowsトースト通知＋設定UI
+- [x] 会話コンテキスト記憶強化（トピック追跡、感情ピン留め）
+- [x] ヘルスチェック＋ステータス表示
+- [x] 定期スケジューラ（curate/proactive/mood自動実行）
+- [x] 一括起動/停止スクリプト
+- [x] データエクスポート/インポート
+- [x] アクティビティタイムライン
+- [x] README.md
+- [x] ダッシュボード .env 読み込み修正（APIキーエラー解消）
+
+### デスクトップペット状況メモ
+- OpenPets: 動作する。「Open default pet on app launch」ON + Reset position で表示される
+- ViviPet: v1.0.0-beta1 インストール済みだがAPI未実装（マウス追従のみ）
+
+### v1.0 — 次の改善候補
+- [ ] 画面常時監視モード（数分おきスクリーンショット→変化検知→コメント）
+- [ ] Fish Speech S2 の実セットアップ＋動作確認
+- [ ] 自前 Live2D Electron アプリ（リップシンク対応）
 - [ ] モバイル通知連携
-- [ ] 音声のストリーミング再生（チャンク単位受信→逐次再生）
 
 ---
 
