@@ -3,14 +3,17 @@ import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
+import { config } from "dotenv";
 import YAML from "yaml";
 import { CompanionAI, loadCharacter } from "@ai-companion/core";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3456;
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..", "..");
+config({ path: path.join(PROJECT_ROOT, ".env") });
+
+const PORT = 3456;
 const STATE_DIR = path.join(PROJECT_ROOT, ".state");
 const CHARACTERS_DIR = path.join(PROJECT_ROOT, "characters");
 const PUBLIC_DIR = path.resolve(__dirname, "..", "public");
@@ -262,6 +265,29 @@ async function handlePostChat(
     const response = await ai.chat(message.trim());
 
     sendJson(res, 200, { text: response.text, reaction: response.reaction });
+
+    // 音声再生（レスポンス送信後にバックグラウンドで）
+    try {
+      const { UnifiedVoiceSynthesizer, OpenPetsClient } = await import("@ai-companion/core");
+      const charPath = path.join(CHARACTERS_DIR, `${getActiveCharName()}.yaml`);
+      const char = loadCharacter(charPath);
+      const voice = new UnifiedVoiceSynthesizer({
+        engine: (char.voice?.engine ?? "aivisspeech") as "aivisspeech" | "fish-speech",
+        aivisspeech: {
+          speakerId: char.voice?.speaker_id,
+          speedScale: char.voice?.speed,
+          pitchScale: char.voice?.pitch,
+          volumeScale: char.voice?.volume,
+        },
+      });
+      const openpets = new OpenPetsClient();
+      await Promise.all([
+        voice.speak(response.text, STATE_DIR).catch(() => {}),
+        openpets.say(response.text, response.reaction as any).catch(() => {}),
+      ]);
+      await openpets.react("idle").catch(() => {});
+    } catch {}
+
   } catch (e) {
     console.error("Chat error:", e);
     const msg = e instanceof Error ? e.message : "Chat failed";

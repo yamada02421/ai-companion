@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ai-companion/core": "*",
+    "dotenv": "^16.0.0",
     "yaml": "^2.0.0"
   },
   "devDependencies": {
